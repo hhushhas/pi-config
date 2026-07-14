@@ -1,0 +1,62 @@
+{
+  "lastChangelogVersion": "0.80.6",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.6-luna",
+  "defaultThinkingLevel": "medium",
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 39000,
+    "keepRecentTokens": 20000
+  },
+  "theme": "github-dark-default",
+  "transport": "auto",
+  "terminal": {
+    "showTerminalProgress": true
+  },
+  "collapseChangelog": false,
+  "showCacheMissNotices": true,
+  "hideThinkingBlock": false,
+  "packages": [
+    {
+      "source": "npm:pi-subagents@0.34.0",
+      "prompts": []
+    },
+    {
+      "source": "npm:@upstash/context7-pi@0.1.1",
+      "prompts": []
+    },
+    "npm:@ryan_nookpi/pi-extension-auto-name@0.3.3",
+    {
+      "source": "git:github.com/davis7dotsh/my-pi-setup@8feb880c9275faaaccb9e4a00ec1ea800cfbfc9f",
+      "extensions": [
+        "!extensions/**",
+        "+extensions/ask-user/index.ts",
+        "+extensions/firecrawl-search/index.ts",
+        "+extensions/git-info/index.ts",
+        "+extensions/model-info/index.ts",
+        "+extensions/ui-customization/index.ts"
+      ],
+      "skills": [],
+      "prompts": [],
+      "themes": [
+        "+themes/github-dark-default.json"
+      ]
+    }
+  ],
+  "subagents": {
+    "agentOverrides": {
+      "researcher": {
+        "disabled": true
+      },
+      "context-builder": {
+        "disabled": true
+      },
+      "planner": {
+        "disabled": true
+      },
+      "oracle": {
+        "disabled": true
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+.env
+auth.json
+sessions/
+npm/
+git/
+generated-images/
+.DS_Store
