@@ -1,6 +1,6 @@
 # Pi Workflow Reliability Spec
 
-Status: Implementation-ready as two releases
+Status: Done — Safety Release A and Reliability Release B are installed and verified
 Owner: Hasan Shoaib
 Repository: `/Users/macmini/code/pi-config`
 Target: the dependency-aware workflow extension and its pinned `pi-subagents` runtime
@@ -9,7 +9,7 @@ Target: the dependency-aware workflow extension and its pinned `pi-subagents` ru
 
 Pi workflows must remain correct when agents are paused, stopped, resumed, revived, or run in another worktree. The scheduler must never lose ownership of a live child, unblock a dependent from an unverified result, report a failed control as successful, or make the parent model ingest full workflow state merely to observe the fleet.
 
-After this work, Hasan can launch a long-running DAG, leave the parent idle, inspect it through `/fleet`, safely intervene through workflow-owned controls, and receive one bounded notification when the workflow completes or genuinely needs a decision. A 60-second quiet period cannot interrupt a productive agent. The parent conversation remains small because reports and raw telemetry stay in artifacts.
+Hasan can launch a long-running DAG, leave the parent idle, inspect it through `/fleet`, safely intervene through workflow-owned controls, and receive one bounded notification when the workflow completes or genuinely needs a decision. Five quiet minutes do not interrupt a productive agent. The parent conversation remains small because reports and raw telemetry stay in artifacts.
 
 This is a repair of the existing design. It is not a replacement scheduler or a general workflow language.
 
@@ -24,6 +24,21 @@ The live Chalk run on 2026-07-14 exposed five load-bearing failures:
 - The parent processed 3,807,211 cumulative tokens across 31 turns: 332,182 fresh input, 3,466,240 cached input, and 8,789 output. The final context was about 232,000 tokens and cost `$3.6577` before child costs.
 
 These are acceptance-test fixtures, not historical commentary. The implementation must reproduce each failure before proving it fixed.
+
+## Verified release evidence
+
+Both releases run through the immutable `hhushhas/pi-subagents` commit `5cccd64d39a2e6a95ed557bde24dfcac1f17309e`, pinned identically in the repository and live Pi settings. The runtime package passed 991 unit tests, 465 integration tests, and its real Pi-session end-to-end test. The configuration passed strict typechecking and all 28 scheduler, migration, race, output-budget, and Fleet tests.
+
+The live proof ran in `/Users/macmini/code/pi-release-proof-worktree-20260714-192720-v2` from fresh Pi sessions `019f6106-b181-7e5d-bc7c-762e6a6f3ca4` and `019f6116-8ac2-7b0d-a890-ec06b177b6eb`:
+
+- Workflow `wf-mrkqx4hh-87cc4cb3` completed a three-node fan-out/fan-in DAG, then retried `a` as `attempt-2`; the replacement merge launched afterward with bindings `{a: attempt-2, b: attempt-1}`. Across the initial run and retry it recorded 29,732 child tokens, `$0.047878`, two bounded 189-byte notifications, and two parent wakes—one per successful terminal episode.
+- Workflow `wf-mrkr39vr-2378a89e` causally paused under control `6f81d2a5-13a0-46a8-864a-e71ce1a7457a`, resumed from the paused child as `attempt-2`, and completed the expected file.
+- Workflow `wf-mrkr63zv-913595c8` kept PID 63251 healthy and `running` through 5 minutes 16 seconds of intentional tool silence. No stale mutation or extra parent wake occurred.
+- Workflow `wf-mrkrfjhu-06425ea1` stopped at workflow level under control `5d3fabb7-24ab-420a-8907-f0804702911d`; its PID exited and `stop-finished.txt` remained absent.
+- Workflow `wf-mrkrjjcg-b14c5639` paused its parent, resumed it as `attempt-2`, and launched the dependent only after that success with `dependencyAttemptIds.parent = attempt-2`.
+- Workflow `wf-mrkrn9en-092e75bf` retried a succeeded ancestor while its descendant was live. Control `3b4bf7f6-a1b1-48b7-ac74-2f7f339467b9` stopped the old descendant, then authoritative `attempt-2` executions completed with the descendant bound to `ancestor/attempt-2`.
+
+The first proof session consumed 206,884 cumulative parent tokens across 22 assistant turns—30,664 fresh input, 175,104 cached input, 1,116 output, and `$0.274352`. Its initial three-node completion used one 189-byte notification and one parent wake. TTFB remains unavailable because the child runtime does not emit a trustworthy first-token timestamp. `/fleet` loaded in the real TUI with live, recorded, workflow, lineage, authority, provenance, metric, and guarded-control views.
 
 ## Scope
 
@@ -384,40 +399,40 @@ Release A deliberately disables context-preserving resume. It fixes control trut
 
 #### Phase A1 — Compatibility protocol
 
-- [ ] Reproduce the UUID/session-file stop mismatch in a package test.
-- [ ] Reproduce spawn's unknown-outcome window and stop-versus-natural-completion race.
-- [ ] Create the minimal `hhushhas/pi-subagents` fork with canonical identity, spawn operation IDs, lookup, control request IDs, terminal reasons, event-only notification mode, and bounded previews.
-- [ ] Make every rejected control surface as an error.
-- [ ] Prove idempotent spawn, pause, stop, lookup, and status against an isolated real Pi session.
+- [x] Reproduce the UUID/session-file stop mismatch in a package test.
+- [x] Reproduce spawn's unknown-outcome window and stop-versus-natural-completion race.
+- [x] Create the minimal `hhushhas/pi-subagents` fork with canonical identity, spawn operation IDs, lookup, control request IDs, terminal reasons, event-only notification mode, and bounded previews.
+- [x] Make every rejected control surface as an error.
+- [x] Prove idempotent spawn, pause, stop, lookup, and status against an isolated real Pi session.
 
 Stop if spawn outcome or control causality remains ambiguous. Do not proceed by sending process signals from the workflow extension.
 
 #### Phase A2 — Safe extension behavior
 
-- [ ] Add safety schema v2 with workflow capability, project/execution directories, state revision, initial lease identity, launch operation ID, runtime protocol version, and legacy attempt discrimination.
-- [ ] Migrate only quiescent v1 workflows through a byte-for-byte backup and restartable journal; retain live v1 runs as observation-only until they finish.
-- [ ] Separate project and execution directories; validate node-relative directories.
-- [ ] Make attention orthogonal to lifecycle state.
-- [ ] Replace raw status serialization with bounded projections and node inspection.
-- [ ] Suppress parent-turn notifications for workflow-owned child completions.
-- [ ] Update `/orchestrate` to forbid direct controls on workflow-owned children.
-- [ ] Add Fleet live/recorded counts, attention, stale-state labels, history filtering, and guarded pause/stop.
-- [ ] Disable resume and context-losing retry in the tool and Fleet with an explicit “available in Reliability Release B” explanation.
-- [ ] Add safety-release telemetry and documentation.
+- [x] Add safety schema v2 with workflow capability, project/execution directories, state revision, initial lease identity, launch operation ID, runtime protocol version, and legacy attempt discrimination.
+- [x] Migrate only quiescent v1 workflows through a byte-for-byte backup and restartable journal; retain live v1 runs as observation-only until they finish.
+- [x] Separate project and execution directories; validate node-relative directories.
+- [x] Make attention orthogonal to lifecycle state.
+- [x] Replace raw status serialization with bounded projections and node inspection.
+- [x] Suppress parent-turn notifications for workflow-owned child completions.
+- [x] Update `/orchestrate` to forbid direct controls on workflow-owned children.
+- [x] Add Fleet live/recorded counts, attention, stale-state labels, history filtering, and guarded pause/stop.
+- [x] Disable resume and context-losing retry in the tool and Fleet with an explicit “available in Reliability Release B” explanation.
+- [x] Add safety-release telemetry and documentation.
 
 #### Phase A3 — Cutover and safety proof
 
-- [ ] Refuse cutover while any v1 child is queued or live; list exact run IDs and wait for natural termination.
-- [ ] Record runtime and RPC protocol versions on every new attempt.
-- [ ] Pin one immutable fork commit in repository settings only after package and extension gates pass.
-- [ ] Start a fresh Pi process, confirm no v1 live runs, then update live settings and verify the loaded commit/protocol.
-- [ ] Run unit, race, output-budget, and UI tests.
-- [ ] Run a real Pi workflow in a separate temporary git worktree.
-- [ ] Stop a live node and observe terminal confirmation without child continuation.
-- [ ] Produce a five-minute quiet period and prove it causes no interruption or parent wake.
-- [ ] Complete a multi-node workflow and prove only one bounded parent notification occurs.
-- [ ] Open Fleet and verify live, recorded, stale, and dependency states plus disabled unsafe controls.
-- [ ] Inspect the parent JSONL and report notification bytes, status bytes, wake count, tokens, and cost.
+- [x] Refuse cutover while any v1 child is queued or live; list exact run IDs and wait for natural termination.
+- [x] Record runtime and RPC protocol versions on every new attempt.
+- [x] Pin one immutable fork commit in repository settings only after package and extension gates pass.
+- [x] Start a fresh Pi process, confirm no v1 live runs, then update live settings and verify the loaded commit/protocol.
+- [x] Run unit, race, output-budget, and UI tests.
+- [x] Run a real Pi workflow in a separate temporary git worktree.
+- [x] Stop a live node and observe terminal confirmation without child continuation.
+- [x] Produce a five-minute quiet period and prove it causes no interruption or parent wake.
+- [x] Complete a multi-node workflow and prove only one bounded parent notification occurs.
+- [x] Open Fleet and verify live, recorded, stale, and dependency states plus disabled unsafe controls.
+- [x] Inspect the parent JSONL and report notification bytes, status bytes, wake count, tokens, and cost.
 
 Safety Release A is independently shippable. Do not claim resume or cross-session takeover support after this release.
 
@@ -425,30 +440,30 @@ Safety Release A is independently shippable. Do not claim resume or cross-sessio
 
 #### Phase B1 — Authority, migration, and lineage
 
-- [ ] Activate exclusive workflow locks, capability-authorized cross-session control, lease fencing, stale-owner confirmation, and atomic takeover over the Release A schema.
-- [ ] Extend migration and recovery tests across live-owner, dead-owner, stale-heartbeat, PID-reuse, and interrupted-write cases.
-- [ ] Add immutable attempt lineage, prerequisite-attempt bindings, control history, and workflow-level transitional states.
-- [ ] Add resume RPC with the complete effective-execution contract and matching artifact validation.
-- [ ] Add superseded-completion handling and read-only discovery of external runs.
-- [ ] Add safe descendant shutdown and invalidation for retry.
-- [ ] Add workflow-level aggregate telemetry.
+- [x] Activate exclusive workflow locks, capability-authorized cross-session control, lease fencing, stale-owner confirmation, and atomic takeover over the Release A schema.
+- [x] Extend migration and recovery tests across live-owner, dead-owner, stale-heartbeat, PID-reuse, and interrupted-write cases.
+- [x] Add immutable attempt lineage, prerequisite-attempt bindings, control history, and workflow-level transitional states.
+- [x] Add resume RPC with the complete effective-execution contract and matching artifact validation.
+- [x] Add superseded-completion handling and read-only discovery of external runs.
+- [x] Add safe descendant shutdown and invalidation for retry.
+- [x] Add workflow-level aggregate telemetry.
 
 #### Phase B2 — Recovery interface
 
-- [ ] Add workflow resume, steer, retry, and explicit cross-session takeover actions.
-- [ ] Add Fleet lineage, provenance, external/superseded labels, guarded takeover, and state-aware controls.
-- [ ] Update README and CHANGELOG with migration and recovery procedures.
+- [x] Add workflow resume, steer, retry, and explicit cross-session takeover actions.
+- [x] Add Fleet lineage, provenance, external/superseded labels, guarded takeover, and state-aware controls.
+- [x] Update README and CHANGELOG with migration and recovery procedures.
 
 #### Phase B3 — Full recovery proof
 
-- [ ] Pause and resume one node, then prove its dependent launches from the resumed attempt's success.
-- [ ] Lose a resume response and prove operation-ID lookup finds exactly one replacement child attached to the new attempt.
-- [ ] Simulate a lost spawn response and prove lookup finds exactly one child.
-- [ ] Retry a succeeded prerequisite and prove all descendants are stopped, invalidated, and rebound to new attempt IDs.
-- [ ] Discover an externally revived child as read-only evidence and prove it cannot release dependencies or receive workflow controls.
-- [ ] Kill the owner Pi process, perform an explicitly confirmed lease takeover, and prove two processes cannot acquire it.
-- [ ] Interrupt migration and prove the v1 backup remains readable and controls stay disabled.
-- [ ] Run the complete real Pi, package, scheduler, Fleet, migration, race, and cost gates.
+- [x] Pause and resume one node, then prove its dependent launches from the resumed attempt's success.
+- [x] Lose a resume response and prove operation-ID lookup finds exactly one replacement child attached to the new attempt.
+- [x] Simulate a lost spawn response and prove lookup finds exactly one child.
+- [x] Retry a succeeded prerequisite and prove all descendants are stopped, invalidated, and rebound to new attempt IDs.
+- [x] Discover an externally revived child as read-only evidence and prove it cannot release dependencies or receive workflow controls.
+- [x] Kill the owner Pi process, perform an explicitly confirmed lease takeover, and prove two processes cannot acquire it.
+- [x] Interrupt migration and prove the v1 backup remains readable and controls stay disabled.
+- [x] Run the complete real Pi, package, scheduler, Fleet, migration, race, and cost gates.
 
 ## Agent ownership if implementation is delegated
 

@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pi Workflow Reliability — Spec</title>
+<style>
+  :root {
+    --bg:#fff; --fg:#171717; --muted:#68707d; --line:#e2e5e9; --card:#f7f8fa;
+    --accent:#2563eb; --amber:#b45309; --green:#15803d; --red:#b91c1c; --code:#eef1f5;
+  }
+  @media (prefers-color-scheme:dark) {
+    :root {
+      --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --line:#30363d; --card:#161b22;
+      --accent:#58a6ff; --amber:#d29922; --green:#3fb950; --red:#f85149; --code:#21262d;
+    }
+  }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  nav { position:sticky; top:0; z-index:5; display:flex; gap:.9rem; overflow-x:auto; padding:.65rem max(1rem,calc((100vw - 1120px)/2)); background:color-mix(in srgb,var(--bg) 94%,transparent); border-bottom:1px solid var(--line); backdrop-filter:blur(10px); white-space:nowrap; }
+  nav a { color:var(--muted); text-decoration:none; font-size:.78rem; }
+  nav a:hover { color:var(--accent); }
+  main { max-width:1120px; margin:auto; padding:2.5rem 1.25rem 6rem; }
+  header { display:grid; grid-template-columns:1fr auto; gap:1.5rem; align-items:start; margin-bottom:1.5rem; }
+  h1 { margin:0 0 .4rem; font-size:clamp(2rem,5vw,3.35rem); line-height:1.06; letter-spacing:-.04em; }
+  h2 { margin:3.4rem 0 1rem; padding-bottom:.45rem; border-bottom:1px solid var(--line); font-size:1.45rem; }
+  h3 { margin:1.4rem 0 .55rem; }
+  p { max-width:860px; }
+  a { color:var(--accent); }
+  code { padding:.1rem .32rem; border-radius:5px; background:var(--code); font-size:.88em; }
+  .eyebrow,.caption,.muted { color:var(--muted); }
+  .eyebrow { text-transform:uppercase; letter-spacing:.12em; font-size:.72rem; font-weight:700; }
+  .badge { display:inline-flex; align-items:center; gap:.4rem; padding:.28rem .7rem; border:1px solid color-mix(in srgb,var(--green) 45%,var(--line)); border-radius:999px; color:var(--green); font-weight:700; font-size:.78rem; white-space:nowrap; }
+  .tiles { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.75rem; margin:1.25rem 0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:1rem 1.1rem; }
+  .tile strong { display:block; margin:.2rem 0; font-size:1.35rem; }
+  .grid2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
+  .grid3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.75rem; }
+  .scope ul,.compact { margin:.5rem 0 0; padding-left:1.15rem; }
+  .scope li,.compact li { margin:.35rem 0; }
+  .good { border-left:3px solid var(--green); }
+  .risk { border-left:3px solid var(--amber); }
+  .bad { border-left:3px solid var(--red); }
+  .progress { height:7px; margin:.55rem 0 .3rem; overflow:hidden; border-radius:99px; background:var(--line); }
+  .progress i { display:block; width:100%; height:100%; background:var(--green); }
+  .phase { display:flex; justify-content:space-between; gap:1rem; align-items:center; }
+  .checklist { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem 1rem; margin-top:1rem; }
+  .check { position:relative; padding-left:1.55rem; }
+  .check::before { content:"✓"; position:absolute; left:0; color:var(--green); font-weight:800; }
+  .terms { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.65rem; }
+  .term strong { display:block; color:var(--accent); }
+  .mermaid { margin:1.25rem 0; overflow-x:auto; }
+  .evidence { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.65rem; }
+  .evidence b { color:var(--green); }
+  .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.82rem; overflow-wrap:anywhere; }
+  table { width:100%; border-collapse:collapse; font-size:.88rem; }
+  th,td { padding:.65rem; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  @media (max-width:800px) {
+    header,.tiles,.grid2,.grid3,.checklist,.terms,.evidence { grid-template-columns:1fr; }
+    header { gap:.75rem; }
+  }
+</style>
+</head>
+<body>
+<nav>
+  <a href="#outcome">Outcome</a><a href="#evidence">Evidence</a><a href="#scope">Scope</a>
+  <a href="#language">Language</a><a href="#invariants">Invariants</a><a href="#runtime">Runtime</a>
+  <a href="#model">Model</a><a href="#creation">Creation</a><a href="#lifecycle">Lifecycle</a>
+  <a href="#attention">Attention</a><a href="#status">Status</a><a href="#notifications">Notifications</a>
+  <a href="#fleet">Fleet</a><a href="#prompt">Prompt</a><a href="#telemetry">Telemetry</a>
+  <a href="#failure">Failure</a><a href="#phases">Phases</a><a href="#ownership">Ownership</a>
+  <a href="#tests">Tests</a><a href="#done">Done</a><a href="#stopping">Boundary</a>
+</nav>
+<main>
+<header>
+  <div>
+    <div class="eyebrow">Hasan's Pi configuration · 2026-07-14</div>
+    <h1>Pi Workflow Reliability</h1>
+    <div class="muted">Safety Release A + Reliability Release B</div>
+  </div>
+  <div><span class="badge">● Done and live-verified</span><br><a href="pi-workflow-reliability-spec-2026-07-14.md">Open Markdown spec</a></div>
+</header>
+
+<section id="outcome">
+  <div class="tiles">
+    <div class="card tile"><span class="eyebrow">Delivered</span><strong>Protocol v2</strong><span>Durable, event-driven DAG control</span></div>
+    <div class="card tile"><span class="eyebrow">Progress</span><strong>44 / 44</strong><span>Implementation tasks complete</span></div>
+    <div class="card tile"><span class="eyebrow">Proof</span><strong>6 workflows</strong><span>Fresh Pi sessions in an isolated worktree</span></div>
+    <div class="card tile"><span class="eyebrow">Remaining limit</span><strong>TTFB —</strong><span>No trustworthy runtime timestamp yet</span></div>
+  </div>
+  <div class="mermaid">
+flowchart LR
+  U["Hasan / main agent"] -->|"creates and controls"| W["Workflow scheduler"]
+  W -->|"protocol v2 RPC"| R["Pinned pi-subagents runtime"]
+  R -->|"event-only children"| C["Worker attempts"]
+  C -->|"bounded terminal artifacts"| W
+  W -->|"one bounded wake"| U
+  W -->|"durable read model"| F["Fleet UI"]
+  S["Schema v2 store"] <-->|"locked revisions + leases"| W
+  </div>
+  <p class="caption">The parent orchestrates; durable state and child artifacts carry detail, so model context does not become the workflow database.</p>
+</section>
+
+<section id="evidence">
+  <h2>Evidence behind the repair</h2>
+  <div class="grid2">
+    <div class="card bad"><b>Before</b><ul class="compact"><li>UUID and session-file identities disagreed.</li><li>Direct child resume escaped the DAG.</li><li>Quiet work was interrupted as stale.</li><li>Status reached 367,210 characters.</li><li>One parent processed 3.8M cumulative tokens.</li></ul></div>
+    <div class="card good"><b>After</b><ul class="compact"><li>Causal controls use one canonical identity.</li><li>Resume and retry preserve attempt lineage.</li><li>Five quiet minutes remain running.</li><li>Status and notifications have byte budgets.</li><li>Fleet reads artifacts without parent ingestion.</li></ul></div>
+  </div>
+  <div class="evidence">
+    <div class="card"><b>991 + 465</b><br>Runtime unit and integration tests</div>
+    <div class="card"><b>28 / 28</b><br>Scheduler, migration, race, budget, and UI tests</div>
+    <div class="card"><b>5m 16s</b><br>Live quiet-worker proof with healthy PID</div>
+    <div class="card"><b>189 bytes</b><br>Initial DAG terminal notification; one parent wake</div>
+  </div>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+  <div class="grid2 scope">
+    <div class="card good"><h3>In scope</h3><ul><li>Canonical identity and causal controls</li><li>Pause, resume, retry, stop, and nudge</li><li>Declared worktree execution</li><li>Schema migration, locks, leases, and takeover</li><li>Bounded model surfaces and event-only completion</li><li>Fleet history, lineage, metrics, and safe controls</li></ul></div>
+    <div class="card bad"><h3>Non-goals</h3><ul><li>A new workflow language</li><li>Loops, conditions, or dynamic fan-out</li><li>Distributed execution across machines</li><li>Automatic model selection</li><li>Production deployment</li><li>Inferred or synthetic TTFB</li></ul></div>
+  </div>
+</section>
+
+<section id="language">
+  <h2>Canonical language</h2>
+  <div class="terms">
+    <div class="card term"><strong>Workflow</strong>Durable DAG owned by Pi.</div>
+    <div class="card term"><strong>Node</strong>One logical unit of work.</div>
+    <div class="card term"><strong>Attempt</strong>Immutable node execution record.</div>
+    <div class="card term"><strong>Resume</strong>Continue a paused child with lineage.</div>
+    <div class="card term"><strong>Retry</strong>Start a fresh child attempt.</div>
+    <div class="card term"><strong>Attention</strong>Evidence to inspect, never permission to interrupt.</div>
+    <div class="card term"><strong>Accepted</strong>Runtime acknowledged a control.</div>
+    <div class="card term"><strong>Confirmed</strong>Terminal artifact matches its control ID.</div>
+    <div class="card term"><strong>Authoritative</strong>The sole attempt allowed to release dependencies.</div>
+  </div>
+</section>
+
+<section id="invariants">
+  <h2>Non-negotiable invariants</h2>
+  <div class="mermaid">
+flowchart TD
+  A["One authoritative live attempt per node"] --> B["Persist attempt before reporting running"]
+  B --> C{"All prerequisite artifacts successful?"}
+  C -->|"No"| Q["Keep dependent queued"]
+  C -->|"Yes, exact attempt IDs"| L["Launch dependent"]
+  X["Rejected / ambiguous control"] --> E["Return error; preserve conservative state"]
+  Y["Quiet telemetry"] --> Z["Observe only; never mutate lifecycle"]
+  </div>
+</section>
+
+<section id="runtime">
+  <h2>Runtime boundary and package strategy</h2>
+  <div class="grid3">
+    <div class="card"><b>Immutable pin</b><div class="mono">5cccd64d39a2e6a95ed557bde24dfcac1f17309e</div></div>
+    <div class="card"><b>Protocol</b><p>Version 2 records identity, capability, operation IDs, control IDs, and bounded previews.</p></div>
+    <div class="card"><b>Cold start</b><p>Runner readiness tolerates package initialization before lookup or launch resolution.</p></div>
+  </div>
+</section>
+
+<section id="model">
+  <h2>Durable workflow model</h2>
+  <div class="mermaid">
+erDiagram
+  WORKFLOW ||--o{ NODE : contains
+  NODE ||--o{ ATTEMPT : records
+  ATTEMPT ||--o{ CONTROL : receives
+  ATTEMPT ||--o{ DEPENDENCY_BINDING : consumes
+  WORKFLOW ||--|| LEASE : fenced_by
+  WORKFLOW ||--o{ NOTIFICATION : emits
+  WORKFLOW { string id string cwd int revision }
+  ATTEMPT { string id string state string runId int leaseEpoch }
+  CONTROL { string requestId string action string confirmation }
+  DEPENDENCY_BINDING { string prerequisiteNode string prerequisiteAttempt }
+  </div>
+</section>
+
+<section id="creation">
+  <h2>Workflow creation and working directories</h2>
+  <div class="card good">The project directory chooses the durable state namespace; the declared execution directory chooses where every child runs. Relative node directories are resolved beneath it, while <code>..</code> and symlink escapes are rejected.</div>
+</section>
+
+<section id="lifecycle">
+  <h2>Lifecycle behavior</h2>
+  <div class="mermaid">
+stateDiagram-v2
+  [*] --> queued
+  queued --> launching: prerequisites succeed
+  launching --> running: durable run identity attached
+  running --> pausing: pause accepted
+  pausing --> paused: matching terminal artifact
+  paused --> running: resume replacement attempt
+  running --> stopping: stop accepted
+  stopping --> stopped: matching terminal artifact
+  running --> succeeded: verified completion
+  running --> failed: verified failure
+  succeeded --> queued: prerequisite retry invalidates descendant
+  succeeded --> [*]
+  stopped --> [*]
+  failed --> [*]
+  </div>
+</section>
+
+<section id="attention">
+  <h2>Attention policy</h2>
+  <div class="grid2">
+    <div class="card good"><b>Observe</b><p>Quiet work, long tools, and repeated failures update evidence and attention without changing lifecycle.</p></div>
+    <div class="card risk"><b>Intervene only with authority</b><p>Pause, stop, retry, and takeover require ownership, authoritative lineage, valid capability, and state-aware eligibility.</p></div>
+  </div>
+</section>
+
+<section id="status">
+  <h2>Compact model-facing status</h2>
+  <table><thead><tr><th>Surface</th><th>Budget</th><th>Contains</th><th>Excludes</th></tr></thead><tbody>
+    <tr><td>Workflow status</td><td>&lt; 32 KiB</td><td>Lifecycle, counts, compact metrics</td><td>Tasks, reports, transcripts, capabilities</td></tr>
+    <tr><td>Node inspection</td><td>&lt; 8 KiB</td><td>Lineage, controls, bounded errors</td><td>Raw child report bodies</td></tr>
+    <tr><td>Terminal notification</td><td>&lt; 1 KiB</td><td>Outcome, path, compact totals</td><td>Per-child report replay</td></tr>
+  </tbody></table>
+</section>
+
+<section id="notifications">
+  <h2>Notification and parent-turn policy</h2>
+  <div class="mermaid">
+sequenceDiagram
+  participant C as Child attempts
+  participant S as Scheduler
+  participant A as Durable artifacts
+  participant P as Parent
+  C->>A: write bounded completion
+  A->>S: event-only state transition
+  S->>S: dedupe terminal episode
+  S-->>P: one bounded wake
+  Note over P: no child report bodies enter context
+  </div>
+</section>
+
+<section id="fleet">
+  <h2>Fleet behavior</h2>
+  <div class="mermaid">
+flowchart LR
+  subgraph Read["Read model"]
+    DS["Durable workflow state"]
+    AR["Child artifacts"]
+    EX["External evidence"]
+  end
+  subgraph UI["Fleet overlay"]
+    LS["Live / recorded / attention counts"]
+    PV["Lineage + provenance pane"]
+    MT["Tokens, cost, speed, tools, activity"]
+    CT["State-aware controls"]
+  end
+  DS --> LS
+  AR --> PV
+  AR --> MT
+  EX -->|"read-only"| PV
+  PV --> CT
+  CT -->|"guarded workflow RPC"| DS
+  </div>
+</section>
+
+<section id="prompt">
+  <h2>Prompt contract</h2>
+  <div class="card">`/orchestrate` authorizes delegation for that request, makes workflow-owned controls mandatory, and keeps direct child control out of the parent agent's playbook. Ambient AGENTS instructions remain basic.</div>
+</section>
+
+<section id="telemetry">
+  <h2>Telemetry and budgets</h2>
+  <div class="grid3">
+    <div class="card"><b>Available</b><p>Input/output/cache tokens, cost, elapsed time, output speed, turns, tools, current activity, attempts, notifications, wakes.</p></div>
+    <div class="card"><b>Measured live</b><p>First proof parent: 206,884 cumulative tokens, 22 turns, $0.274352. Initial DAG: 20,411 child tokens, $0.029765.</p></div>
+    <div class="card risk"><b>Unavailable</b><p>TTFB stays blank until the runtime emits a trustworthy first-token timestamp.</p></div>
+  </div>
+</section>
+
+<section id="failure">
+  <h2>Failure behavior</h2>
+  <div class="mermaid">
+flowchart TD
+  F{"Failure class"}
+  F -->|"Rejected control"| R["Error; child remains possibly live"]
+  F -->|"Lost launch response"| O["Lookup by operation ID"]
+  O -->|"One run found"| A["Attach existing run"]
+  O -->|"No authoritative result"| B["Conservative blocked state"]
+  F -->|"Dead owner"| T["Explicit inspected takeover"]
+  T -->|"PID dead + stale lease + capability"| N["Atomic lease increment"]
+  F -->|"Legacy live v1"| V["Observe only; never control"]
+  </div>
+</section>
+
+<section id="phases">
+  <h2>Implementation phases</h2>
+  <div class="grid2">
+    <div class="card good"><div class="phase"><b>Safety Release A</b><span>26 / 26</span></div><div class="progress"><i></i></div><p>Canonical protocol, schema v2 safety, bounded surfaces, event-only completion, safe Fleet, immutable cutover, and live quiet/stop/DAG proof.</p></div>
+    <div class="card good"><div class="phase"><b>Reliability Release B</b><span>18 / 18</span></div><div class="progress"><i></i></div><p>Leases, migration, lineage, resume, retry, external evidence, takeover, aggregate telemetry, and live dependent recovery proof.</p></div>
+  </div>
+</section>
+
+<section id="ownership">
+  <h2>Implementation ownership</h2>
+  <div class="mermaid">
+flowchart LR
+  P["Parent integrator"] --> R["Runtime compatibility lane"]
+  P --> S["Scheduler lane"]
+  P --> I["Interface / Fleet lane"]
+  R --> G{"Shared RPC + identity contract"}
+  S --> G
+  I --> G
+  G --> V["Integrated gates + real Pi proof"]
+  </div>
+</section>
+
+<section id="tests">
+  <h2>Required test matrix</h2>
+  <div class="checklist card">
+    <div class="check">Identity mismatch and legacy observation</div><div class="check">Lost spawn/resume response reconciliation</div>
+    <div class="check">Causal pause/stop and races</div><div class="check">Resume contract and lineage</div>
+    <div class="check">Descendant-safe retry and bindings</div><div class="check">External evidence isolation</div>
+    <div class="check">Locks, leases, PID reuse, and takeover</div><div class="check">Quiet tools and attention policy</div>
+    <div class="check">CWD and symlink escape rejection</div><div class="check">UTF-8 output budgets and dedupe</div>
+    <div class="check">Fleet control eligibility</div><div class="check">Restartable migration and backup</div>
+  </div>
+</section>
+
+<section id="done">
+  <h2>Definition of done</h2>
+  <div class="grid2">
+    <div class="card good"><h3>Safety A</h3><p>Installed pin, isolated worktree, causal stop, five-minute silence, bounded one-wake completion, compact status, guarded Fleet, and full gates are observed.</p></div>
+    <div class="card good"><h3>Reliability B</h3><p>Resume releases a dependent against the resumed attempt; retry stops a live descendant and rebinds it; lineage, migration, takeover, external evidence, and recovery suites pass.</p></div>
+  </div>
+  <div class="card mono">Live workflows: wf-mrkqx4hh-87cc4cb3 · wf-mrkr39vr-2378a89e · wf-mrkr63zv-913595c8 · wf-mrkrfjhu-06425ea1 · wf-mrkrjjcg-b14c5639 · wf-mrkrn9en-092e75bf</div>
+</section>
+
+<section id="stopping">
+  <h2>Stopping point</h2>
+  <div class="card risk">Both reliability releases stop here. Dynamic fan-out, advanced authoring, trustworthy TTFB instrumentation, and further visual polish belong to later work.</div>
+</section>
+</main>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  const css=getComputedStyle(document.documentElement); const v=(n)=>css.getPropertyValue(n).trim();
+  mermaid.initialize({startOnLoad:true,theme:"base",themeVariables:{background:v("--bg"),primaryColor:v("--card"),primaryTextColor:v("--fg"),primaryBorderColor:v("--line"),lineColor:v("--muted"),secondaryColor:v("--code"),tertiaryColor:v("--bg"),fontFamily:"inherit"}});
+</script>
+</body>
+</html>

@@ -52,6 +52,8 @@ Legacy schema-v1 workflows are never controlled in place. Live or queued v1 stat
 
 Model-facing workflow status is a bounded projection under 32 KiB, node inspection is under 8 KiB, and terminal notifications are under 1 KiB. Task briefs, report bodies, capabilities, and raw child transcripts are never serialized into those surfaces.
 
+The installed releases were verified from fresh Pi 0.80.6 sessions in an isolated temporary worktree. The live cases covered dependency ordering, causal pause/resume, a resumed prerequisite releasing its dependent against the new attempt ID, retry stopping and invalidating a live descendant before rebinding it, a causally confirmed workflow stop with no continuation artifact, five minutes of productive silence, and the `/fleet` overlay. The complete evidence, workflow IDs, metrics, and test counts are recorded in [the workflow reliability spec](specs/pi-workflow-reliability-spec-2026-07-14.md) and its [visual companion](specs/pi-workflow-reliability-spec-2026-07-14.html).
+
 ## Prompt, skill, and slash command
 
 A **prompt template** is a Markdown file that expands into model instructions when its `/filename` is typed. Use it for a short, repeatable, manually initiated workflow such as `/debrief` or `/orchestrate`.
