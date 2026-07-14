@@ -1,11 +1,14 @@
-export const WORKFLOW_SCHEMA_VERSION = 1 as const;
+export const WORKFLOW_SCHEMA_VERSION = 2 as const;
 
 export type WorkflowRunStatus =
   | "active"
+  | "pausing"
+  | "stopping"
   | "awaiting_resume"
   | "paused"
   | "succeeded"
   | "blocked"
+  | "failed"
   | "stopped";
 
 export type WorkflowNodeStatus =
@@ -18,7 +21,11 @@ export type WorkflowNodeStatus =
   | "failed"
   | "paused"
   | "orphaned"
-  | "stopped";
+  | "stopped"
+  | "invalidated";
+
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+export type ThinkingLevel = typeof THINKING_LEVELS[number];
 
 export interface WorkflowNodeSpec {
   id: string;
@@ -26,13 +33,11 @@ export interface WorkflowNodeSpec {
   agent: string;
   task: string;
   dependsOn: string[];
+  cwd?: string;
   model?: string;
   thinking?: ThinkingLevel;
   timeoutMs?: number;
 }
-
-export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
-export type ThinkingLevel = typeof THINKING_LEVELS[number];
 
 export interface CostSnapshot {
   inputTokens: number;
@@ -40,79 +45,164 @@ export interface CostSnapshot {
   costUsd: number;
 }
 
-export interface NodeStatusSnapshot {
+export interface AttemptTelemetry {
   state?: string;
   startedAt?: number;
   endedAt?: number;
   lastActivityAt?: number;
+  activityState?: "active_long_running" | "needs_attention";
   currentTool?: string;
   currentPath?: string;
   turnCount?: number;
   toolCount?: number;
   totalTokens?: { input: number; output: number; total: number };
   totalCost?: CostSnapshot;
-  steps?: Array<{
-    model?: string;
-    thinking?: string;
-    recentOutput?: string[];
-    transcriptPath?: string;
-    currentTool?: string;
-    currentPath?: string;
-    turnCount?: number;
-    toolCount?: number;
-    totalCost?: CostSnapshot;
-    tokens?: { input: number; output: number; total: number };
-  }>;
+  model?: string;
+  thinking?: string;
+  terminalReason?: "completed" | "failed" | "paused" | "stopped" | "timed_out" | "process_lost";
+  terminalControlRequestId?: string;
 }
 
-export interface NodeAttempt {
+export interface AttemptControl {
+  controlRequestId: string;
+  action: "pause" | "stop" | "resume" | "steer";
+  requestedAt: number;
+  acceptedAt?: number;
+  confirmedAt?: number;
+  error?: string;
+}
+
+interface AttemptBaseV2 {
   id: string;
   rpcRequestId: string;
   packageRunId?: string;
   asyncDir?: string;
+  pid?: number;
   ownerSessionId: string;
   requestedAt: number;
   startedAt?: number;
   endedAt?: number;
   state: Exclude<WorkflowNodeStatus, "queued">;
   sessionRoot: string;
-  statusSnapshot?: NodeStatusSnapshot;
-  resultSnapshot?: Record<string, unknown>;
+  childSessionFile?: string;
+  dependencyAttemptIds: Record<string, string>;
+  controls: AttemptControl[];
+  telemetry?: AttemptTelemetry;
   completionSeen?: boolean;
-  pauseRequested?: boolean;
-  stopRequested?: boolean;
   error?: string;
 }
+
+export interface LaunchedAttemptV2 extends AttemptBaseV2 {
+  kind: "initial" | "resume" | "retry";
+  launchOperationId: string;
+  previousAttemptId?: string;
+  sourceRunId?: string;
+  runtimeProtocolVersion: 2;
+  artifactVersion: 2;
+  launchLeaseEpoch: number;
+  expectedExecution: {
+    agent: string;
+    model?: string;
+    thinking?: string;
+    cwd: string;
+    timeoutMs?: number;
+    notificationMode: "event-only";
+  };
+}
+
+export interface LegacyAttemptV2 extends AttemptBaseV2 {
+  kind: "legacy";
+  controlAvailable: false;
+  lookupAvailable: false;
+}
+
+export type NodeAttempt = LaunchedAttemptV2 | LegacyAttemptV2;
 
 export interface WorkflowNode {
   spec: WorkflowNodeSpec;
   status: WorkflowNodeStatus;
   attempts: NodeAttempt[];
+  authoritativeAttemptId?: string;
+  invalidatedAt?: number;
+  invalidatedByAttemptId?: string;
+}
+
+export interface WorkflowTelemetry {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  attempts: number;
+  turns: number;
+  tools: number;
+  wallTimeMs: number;
+  queueTimeMs: number;
+  controlFailures: number;
+  attentionEvents: number;
+  notificationCount: number;
+  notificationBytes: number;
+  parentWakeCount: number;
+  lastStatusBytes: number;
+}
+
+export interface NotificationRecord {
+  key: string;
+  category: "succeeded" | "blocked" | "failed" | "paused" | "stopped";
+  attemptedAt: number;
+  deliveredAt?: number;
+  bytes: number;
+  triggerTurn: boolean;
+  message: string;
+  error?: string;
 }
 
 export interface WorkflowRun {
-  schemaVersion: typeof WORKFLOW_SCHEMA_VERSION;
+  schemaVersion: 2;
   id: string;
   name: string;
+  projectCwd: string;
+  executionCwd: string;
+  /** Compatibility alias for pre-v2 display code; always equals executionCwd. */
   cwd: string;
+  workflowCapability: string;
   ownerSessionId: string;
   ownerProcessId?: number;
   ownerHeartbeatAt?: number;
   ownerSessionFile?: string;
+  ownerLeaseId: string;
+  ownerLeaseEpoch: number;
+  stateRevision: number;
   status: WorkflowRunStatus;
   maxConcurrency: number;
   createdAt: number;
   updatedAt: number;
+  runtimeContract: {
+    rpcVersion: 2;
+    artifactVersion: 2;
+  };
+  controlsDisabled?: string;
+  takeoverRequired?: boolean;
   nodes: Record<string, WorkflowNode>;
+  telemetry: WorkflowTelemetry;
+  notifications: NotificationRecord[];
+  externalEvidence: Array<{
+    runId: string;
+    asyncDir: string;
+    state: string;
+    sessionFile: string;
+    discoveredAt: number;
+    reason: "shared-child-session";
+  }>;
 }
 
 export interface WorkflowDefinition {
   name: string;
+  cwd?: string;
   nodes: Array<Omit<WorkflowNodeSpec, "dependsOn"> & { dependsOn?: string[] }>;
   maxConcurrency?: number;
 }
 
-const TERMINAL_FAILURES = new Set<WorkflowNodeStatus>(["failed", "paused", "orphaned", "stopped"]);
+const TERMINAL_FAILURES = new Set<WorkflowNodeStatus>(["failed", "paused", "orphaned", "stopped", "invalidated"]);
 
 export function validateDefinition(definition: WorkflowDefinition): WorkflowNodeSpec[] {
   const name = definition.name.trim();
@@ -123,23 +213,20 @@ export function validateDefinition(definition: WorkflowDefinition): WorkflowNode
   if (!Number.isInteger(maxConcurrency) || maxConcurrency < 1 || maxConcurrency > 8) {
     throw new Error("maxConcurrency must be an integer from 1 to 8.");
   }
-
   const ids = new Set<string>();
   const nodes = definition.nodes.map((node) => {
     const id = node.id.trim();
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id)) {
-      throw new Error(`Invalid node id '${node.id}'. Use 1-64 letters, numbers, underscores, or hyphens.`);
-    }
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id)) throw new Error(`Invalid node id '${node.id}'. Use 1-64 letters, numbers, underscores, or hyphens.`);
     if (ids.has(id)) throw new Error(`Duplicate node id '${id}'.`);
     if (!node.agent.trim()) throw new Error(`Node '${id}' needs an agent role.`);
     if (!node.task.trim()) throw new Error(`Node '${id}' needs a task.`);
-    if (node.thinking !== undefined && !(THINKING_LEVELS as readonly string[]).includes(node.thinking)) {
-      throw new Error(`Node '${id}' has unsupported reasoning effort '${node.thinking}'.`);
+    if (node.cwd !== undefined && (!node.cwd.trim() || node.cwd.startsWith("/") || node.cwd.split(/[\\/]+/).includes(".."))) {
+      throw new Error(`Node '${id}' cwd must be a relative path contained by the workflow execution directory.`);
     }
+    if (node.thinking !== undefined && !(THINKING_LEVELS as readonly string[]).includes(node.thinking)) throw new Error(`Node '${id}' has unsupported reasoning effort '${node.thinking}'.`);
     ids.add(id);
     return { ...node, id, dependsOn: [...new Set(node.dependsOn ?? [])] };
   });
-
   for (const node of nodes) {
     for (const dependency of node.dependsOn) {
       if (!ids.has(dependency)) throw new Error(`Node '${node.id}' depends on unknown node '${dependency}'.`);
@@ -150,16 +237,13 @@ export function validateDefinition(definition: WorkflowDefinition): WorkflowNode
   return nodes;
 }
 
-export function topologicalNodeIds(
-  nodes: Record<string, Pick<WorkflowNode, "spec">>,
-): string[] {
+export function topologicalNodeIds(nodes: Record<string, Pick<WorkflowNode, "spec">>): string[] {
   const indegree = new Map(Object.keys(nodes).map((id) => [id, 0]));
   const dependents = new Map(Object.keys(nodes).map((id) => [id, [] as string[]]));
   for (const node of Object.values(nodes)) {
     indegree.set(node.spec.id, node.spec.dependsOn.length);
     for (const dependency of node.spec.dependsOn) dependents.get(dependency)?.push(node.spec.id);
   }
-
   const ready = [...indegree.entries()].filter(([, count]) => count === 0).map(([id]) => id).sort();
   const ordered: string[] = [];
   while (ready.length > 0) {
@@ -176,6 +260,18 @@ export function topologicalNodeIds(
   return ordered;
 }
 
+export function currentAttempt(node: WorkflowNode): NodeAttempt | undefined {
+  return node.authoritativeAttemptId
+    ? node.attempts.find((attempt) => attempt.id === node.authoritativeAttemptId)
+    : node.attempts.at(-1);
+}
+
+export function successfulAuthoritativeAttempt(node: WorkflowNode): NodeAttempt | undefined {
+  const attempt = currentAttempt(node);
+  const unresolvedControl = attempt?.controls.some((control) => ["pause", "stop"].includes(control.action) && !control.confirmedAt);
+  return attempt?.state === "succeeded" && attempt.completionSeen && !unresolvedControl ? attempt : undefined;
+}
+
 export function effectiveNodeStatus(workflow: WorkflowRun, node: WorkflowNode): WorkflowNodeStatus | "blocked" {
   if (node.status !== "queued") return node.status;
   const dependencies = node.spec.dependsOn.map((id) => workflow.nodes[id]?.status);
@@ -185,17 +281,14 @@ export function effectiveNodeStatus(workflow: WorkflowRun, node: WorkflowNode): 
 export function readyNodeIds(workflow: WorkflowRun): string[] {
   return topologicalNodeIds(workflow.nodes).filter((id) => {
     const node = workflow.nodes[id];
-    return node.status === "queued"
-      && node.spec.dependsOn.every((dependency) => workflow.nodes[dependency]?.status === "succeeded");
+    return node.status === "queued" && node.spec.dependsOn.every((dependency) => successfulAuthoritativeAttempt(workflow.nodes[dependency]) !== undefined);
   });
 }
 
 export function deriveWorkflowStatus(workflow: WorkflowRun): WorkflowRunStatus {
   const nodes = Object.values(workflow.nodes);
   if (nodes.every((node) => node.status === "succeeded")) return "succeeded";
-  if (workflow.status === "awaiting_resume" || workflow.status === "paused" || workflow.status === "stopped") {
-    return workflow.status;
-  }
+  if (["pausing", "stopping", "awaiting_resume", "paused", "stopped", "failed"].includes(workflow.status)) return workflow.status;
   if (nodes.some((node) => ["running", "launching", "pausing", "stopping"].includes(node.status))) return "active";
   if (readyNodeIds(workflow).length > 0) return "active";
   return "blocked";
@@ -216,6 +309,6 @@ export function descendantsOf(workflow: WorkflowRun, nodeId: string): string[] {
   return [...result];
 }
 
-export function currentAttempt(node: WorkflowNode): NodeAttempt | undefined {
-  return node.attempts.at(-1);
+export function emptyTelemetry(): WorkflowTelemetry {
+  return { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, attempts: 0, turns: 0, tools: 0, wallTimeMs: 0, queueTimeMs: 0, controlFailures: 0, attentionEvents: 0, notificationCount: 0, notificationBytes: 0, parentWakeCount: 0, lastStatusBytes: 0 };
 }

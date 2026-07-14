@@ -5,6 +5,7 @@ import { FleetOverlay } from "../lib/workflows/fleet-overlay.ts";
 import { SubagentRpcClient } from "../lib/workflows/rpc-client.ts";
 import { WorkflowScheduler } from "../lib/workflows/scheduler.ts";
 import { WorkflowStore } from "../lib/workflows/store.ts";
+import { inspectProjection, listProjection, statusProjection } from "../lib/workflows/projection.ts";
 
 const ThinkingSchema = Type.Union([
   Type.Literal("off"),
@@ -24,6 +25,7 @@ const NodeSchema = Type.Object({
   model: Type.Optional(Type.String({ description: "Per-node provider/model override." })),
   thinking: Type.Optional(ThinkingSchema),
   timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
+  cwd: Type.Optional(Type.String({ description: "Relative working directory beneath the workflow cwd." })),
 });
 
 const WorkflowParams = Type.Object({
@@ -31,16 +33,23 @@ const WorkflowParams = Type.Object({
     Type.Literal("create"),
     Type.Literal("list"),
     Type.Literal("status"),
+    Type.Literal("inspect"),
     Type.Literal("resume"),
     Type.Literal("pause"),
     Type.Literal("stop"),
     Type.Literal("retry"),
+    Type.Literal("nudge"),
+    Type.Literal("takeover"),
   ]),
   workflowId: Type.Optional(Type.String()),
   nodeId: Type.Optional(Type.String()),
   name: Type.Optional(Type.String()),
   nodes: Type.Optional(Type.Array(NodeSchema, { maxItems: 64 })),
   maxConcurrency: Type.Optional(Type.Integer({ minimum: 1, maximum: 8 })),
+  cwd: Type.Optional(Type.String({ description: "Absolute execution directory; defaults to the active Pi cwd." })),
+  includeHistory: Type.Optional(Type.Boolean()),
+  message: Type.Optional(Type.String()),
+  confirm: Type.Optional(Type.Boolean()),
 });
 
 interface WorkflowToolDetails {
@@ -57,17 +66,6 @@ function requireValue(value: string | undefined, label: string): string {
 function modelName(ctx: ExtensionContext): string | undefined {
   if (!ctx.model) return undefined;
   return `${ctx.model.provider}/${ctx.model.id}`;
-}
-
-function summary(scheduler: WorkflowScheduler) {
-  return scheduler.snapshot().map((workflow) => ({
-    id: workflow.id,
-    name: workflow.name,
-    status: workflow.status,
-    completed: Object.values(workflow.nodes).filter((node) => node.status === "succeeded").length,
-    total: Object.keys(workflow.nodes).length,
-    updatedAt: workflow.updatedAt,
-  }));
 }
 
 export default function (pi: ExtensionAPI) {
@@ -105,11 +103,14 @@ export default function (pi: ExtensionAPI) {
         sessionId,
         ping.session.sessionFile ?? undefined,
         modelName(ctx),
-        (message, level) => ctx.ui.notify(message, level),
+        async (message, level, triggerTurn) => {
+          ctx.ui.notify(message, level);
+          if (triggerTurn) pi.sendMessage({ customType: "workflow-notify", content: message, display: true }, { triggerTurn: true });
+        },
       );
       unsubscribers = [
         pi.events.on("subagent:async-complete", (value) => scheduler?.handleCompletion(value)),
-        pi.events.on("subagent:control-event", () => ctx.ui.setStatus("dag-workflows", "workflow needs attention")),
+        pi.events.on("subagent:control-event", () => ctx.ui.setStatus("dag-workflows", "workflow attention")),
       ];
       await scheduler.initialize();
 
@@ -122,17 +123,7 @@ export default function (pi: ExtensionAPI) {
       statusUnsubscribe = scheduler.subscribe(updateStatus);
       updateStatus();
 
-      if (event.reason === "startup" && ctx.mode === "tui") {
-        for (const workflow of scheduler.resumableWorkflows()) {
-          const completed = Object.values(workflow.nodes).filter((node) => node.status === "succeeded").length;
-          const confirmed = await ctx.ui.confirm(
-            "Resume workflow?",
-            `Resume '${workflow.name}' (${completed}/${Object.keys(workflow.nodes).length} complete)?`,
-            { signal: promptController.signal },
-          );
-          if (confirmed) await scheduler.resume(workflow.id);
-        }
-      }
+      void event;
     } catch (error) {
       ctx.ui.notify(`DAG workflows unavailable: ${error instanceof Error ? error.message : String(error)}`, "error");
       shutdown();
@@ -164,6 +155,7 @@ export default function (pi: ExtensionAPI) {
             name: requireValue(params.name, "name"),
             nodes: params.nodes ?? [],
             maxConcurrency: params.maxConcurrency,
+            cwd: params.cwd,
           });
           return {
             content: [{ type: "text", text: `Started workflow ${workflow.id} (${workflow.name}) with ${Object.keys(workflow.nodes).length} nodes.` }],
@@ -172,7 +164,7 @@ export default function (pi: ExtensionAPI) {
         }
         if (params.action === "list") {
           return {
-            content: [{ type: "text", text: JSON.stringify(summary(scheduler), null, 2) }],
+            content: [{ type: "text", text: listProjection(scheduler.snapshot(), params.includeHistory === true) }],
             details: { action: params.action },
           };
         }
@@ -181,19 +173,29 @@ export default function (pi: ExtensionAPI) {
         if (params.action === "status") {
           const workflow = scheduler.get(workflowId);
           return {
-            content: [{ type: "text", text: JSON.stringify(workflow, null, 2) }],
+            content: [{ type: "text", text: statusProjection(workflow) }],
             details: { action: params.action, workflowId, status: workflow.status },
           };
         }
-        if (params.action === "resume") await scheduler.resume(workflowId);
+        if (params.action === "inspect") {
+          const workflow = scheduler.get(workflowId);
+          return { content: [{ type: "text", text: inspectProjection(workflow, requireValue(params.nodeId, "nodeId")) }], details: { action: params.action, workflowId, status: workflow.status } };
+        }
+        if (params.action === "resume") await scheduler.resume(workflowId, requireValue(params.nodeId, "nodeId"));
         if (params.action === "pause") await scheduler.pause(workflowId);
         if (params.action === "stop") {
           if (params.nodeId) await scheduler.stopNode(workflowId, params.nodeId);
           else await scheduler.stopWorkflow(workflowId);
         }
         if (params.action === "retry") await scheduler.retryNode(workflowId, requireValue(params.nodeId, "nodeId"));
+        if (params.action === "nudge") await scheduler.nudgeNode(workflowId, requireValue(params.nodeId, "nodeId"), requireValue(params.message, "message"));
+        if (params.action === "takeover") {
+          const workflow = scheduler.get(workflowId);
+          if (params.confirm !== true) throw new Error(`Takeover requires confirm:true after inspecting owner PID ${workflow.ownerProcessId ?? "unknown"}, lease epoch ${workflow.ownerLeaseEpoch}, and revision ${workflow.stateRevision}.`);
+          await scheduler.takeover(workflowId, { revision: workflow.stateRevision, leaseId: workflow.ownerLeaseId, leaseEpoch: workflow.ownerLeaseEpoch, ownerProcessId: workflow.ownerProcessId });
+        }
         return {
-          content: [{ type: "text", text: `${params.action} accepted for workflow ${workflowId}.` }],
+          content: [{ type: "text", text: `${params.action} accepted for workflow ${workflowId}; any terminal control remains pending until its artifact confirms the exact request.` }],
           details: { action: params.action, workflowId },
         };
       } catch (error) {
@@ -224,11 +226,14 @@ export default function (pi: ExtensionAPI) {
         done,
         {
           snapshot: () => scheduler!.snapshot(),
+          isControllable: (workflowId) => !scheduler!.isForeignOwned(workflowId) && !scheduler!.get(workflowId).controlsDisabled,
           subscribe: (listener) => scheduler!.subscribe(listener),
-          resume: (workflowId) => scheduler!.resume(workflowId),
+          resume: (workflowId, nodeId) => scheduler!.resume(workflowId, nodeId),
           pause: (workflowId) => scheduler!.pause(workflowId),
           stopNode: (workflowId, nodeId) => scheduler!.stopNode(workflowId, nodeId),
           retryNode: (workflowId, nodeId) => scheduler!.retryNode(workflowId, nodeId),
+          takeover: (workflowId, confirmation) => scheduler!.takeover(workflowId, confirmation),
+          confirm: (title, message) => ctx.ui.confirm(title, message),
           notify: (message, level) => ctx.ui.notify(message, level),
         },
       ), {

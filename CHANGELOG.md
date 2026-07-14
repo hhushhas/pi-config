@@ -7,4 +7,7 @@
 - Added manually invoked `/debrief` and `/orchestrate` prompt templates.
 - Reduced global agent instructions to basic working, research, verification, and safety rules.
 - Added durable dependency-aware DAG workflows over the existing `pi-subagents` runtime, including per-node model and effort overrides, bounded concurrency, pause, stop, retry, and explicit restart recovery.
-- Added `/fleet`, a responsive Pi-native overview of workflow dependencies, agent states, metrics, current activity, and recent output.
+- Added `/fleet`, a responsive Pi-native overview of dependencies, ownership, lineage, lifecycle, attention, metrics, current activity, external evidence, and recovery controls.
+- Replaced the workflow runtime boundary with capability-authorized protocol v2 from the `hhushhas/pi-subagents` fork: idempotent launch lookup, causal pause/stop, acknowledged steering, context-preserving resume, event-only child completion, canonical session identity, and quiet-run safety.
+- Migrated workflow storage to schema v2 with byte-preserving v1 migration, kernel-locked revisions, lease fencing and dead-owner takeover, immutable attempt lineage, dependency-attempt bindings, external-run evidence, descendant-safe retry, and aggregate telemetry.
+- Bounded model-facing workflow status, inspection, and notifications; serialized scheduler mutations to prevent interval races; and guarded Fleet actions by ownership, authority, lifecycle, and provenance.

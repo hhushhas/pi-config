@@ -8,15 +8,26 @@ import type { WorkflowRun } from "./model.ts";
 function workflow(): WorkflowRun {
   const now = Date.now();
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: "wf-fleet",
     name: "A long dependency-aware fleet workflow",
     cwd: "/project",
+    projectCwd: "/project",
+    executionCwd: "/project",
+    workflowCapability: "secret",
     ownerSessionId: "session",
+    ownerProcessId: process.pid,
+    ownerLeaseId: "lease",
+    ownerLeaseEpoch: 1,
+    stateRevision: 1,
     status: "active",
     maxConcurrency: 4,
     createdAt: now,
     updatedAt: now,
+    runtimeContract: { rpcVersion: 2, artifactVersion: 2 },
+    telemetry: { inputTokens: 1200, outputTokens: 400, totalTokens: 1600, costUsd: 0.0123, attempts: 1, turns: 3, tools: 8, wallTimeMs: 0, queueTimeMs: 0, controlFailures: 0, attentionEvents: 0, notificationCount: 0, notificationBytes: 0, parentWakeCount: 0, lastStatusBytes: 0 },
+    notifications: [],
+    externalEvidence: [],
     nodes: {
       context: {
         spec: { id: "context", label: "Map an extremely long authentication context", agent: "scout", task: "map", dependsOn: [] },
@@ -28,6 +39,8 @@ function workflow(): WorkflowRun {
         status: "running",
         attempts: [{
           id: "attempt-1",
+          kind: "initial",
+          launchOperationId: "operation",
           rpcRequestId: "request",
           packageRunId: "run",
           asyncDir: "/tmp/run",
@@ -36,22 +49,33 @@ function workflow(): WorkflowRun {
           startedAt: now,
           state: "running",
           sessionRoot: "/tmp/sessions",
-          statusSnapshot: {
+          dependencyAttemptIds: { context: "attempt-1" },
+          controls: [],
+          runtimeProtocolVersion: 2,
+          artifactVersion: 2,
+          launchLeaseEpoch: 1,
+          expectedExecution: { agent: "worker", cwd: "/project", notificationMode: "event-only" },
+          telemetry: {
             state: "running",
             totalTokens: { input: 1200, output: 400, total: 1600 },
             totalCost: { inputTokens: 1200, outputTokens: 400, costUsd: 0.0123 },
-            steps: [{ recentOutput: ["Reading a very long path that should never overflow the fleet overlay width."], turnCount: 3, toolCount: 8 }],
+            turnCount: 3,
+            toolCount: 8,
           },
         }],
+        authoritativeAttemptId: "attempt-1",
       },
     },
   };
 }
 
-function harness() {
+function harness(controllable = true) {
   const listeners = new Set<() => void>();
   let renders = 0;
   let retries = 0;
+  let pauses = 0;
+  let stops = 0;
+  const notices: string[] = [];
   const tui = { requestRender: () => { renders += 1; } } as unknown as TUI;
   const theme = {
     fg: (_color: string, text: string) => text,
@@ -67,18 +91,21 @@ function harness() {
   } as KeybindingsManager;
   const actions: FleetActions = {
     snapshot: () => [workflow()],
+    isControllable: () => controllable,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
     resume: async () => {},
-    pause: async () => {},
-    stopNode: async () => {},
+    pause: async () => { pauses += 1; },
+    stopNode: async () => { stops += 1; },
     retryNode: async () => { retries += 1; },
-    notify: () => {},
+    takeover: async () => {},
+    confirm: async () => true,
+    notify: (message) => { notices.push(message); },
   };
   const overlay = new FleetOverlay(tui, theme, keybindings, () => {}, actions);
-  return { overlay, listeners, get renders() { return renders; }, get retries() { return retries; } };
+  return { overlay, listeners, notices, get renders() { return renders; }, get retries() { return retries; }, get pauses() { return pauses; }, get stops() { return stops; } };
 }
 
 test("fleet rendering stays inside narrow and wide terminal widths", () => {
@@ -89,14 +116,29 @@ test("fleet rendering stays inside narrow and wide terminal widths", () => {
   overlay.dispose();
 });
 
+test("fleet disables pause and stop for a foreign-owned authoritative attempt", async () => {
+  const state = harness(false);
+  try {
+    state.overlay.handleInput("down");
+    state.overlay.handleInput("p");
+    state.overlay.handleInput("x");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(state.pauses, 0);
+    assert.equal(state.stops, 0);
+    assert.match(state.notices.join("\n"), /disabled for foreign/);
+  } finally { state.overlay.dispose(); }
+});
+
 test("fleet keyboard actions target the selected node and disposal removes redraws", async () => {
   const state = harness();
-  state.overlay.handleInput("down");
-  state.overlay.handleInput("r");
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(state.retries, 1);
-  const rendersBeforeDispose = state.renders;
-  state.overlay.dispose();
-  for (const listener of state.listeners) listener();
-  assert.equal(state.renders, rendersBeforeDispose);
+  try {
+    state.overlay.handleInput("down");
+    state.overlay.handleInput("p");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(state.pauses, 1);
+    const rendersBeforeDispose = state.renders;
+    state.overlay.dispose();
+    for (const listener of state.listeners) listener();
+    assert.equal(state.renders, rendersBeforeDispose);
+  } finally { state.overlay.dispose(); }
 });

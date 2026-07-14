@@ -18,7 +18,7 @@
   "hideThinkingBlock": false,
   "packages": [
     {
-      "source": "npm:pi-subagents@0.34.0",
+      "source": "git:github.com/hhushhas/pi-subagents@b530e961c4aaa2fd936e489c12ee0a7b3cbade36",
       "prompts": []
     },
     {

@@ -12,15 +12,25 @@ import {
 function workflow(): WorkflowRun {
   const now = Date.now();
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: "wf-test",
     name: "test",
     cwd: "/tmp/test",
+    projectCwd: "/tmp/test",
+    executionCwd: "/tmp/test",
+    workflowCapability: "secret",
     ownerSessionId: "session",
+    ownerLeaseId: "lease",
+    ownerLeaseEpoch: 1,
+    stateRevision: 1,
     status: "active",
     maxConcurrency: 4,
     createdAt: now,
     updatedAt: now,
+    runtimeContract: { rpcVersion: 2, artifactVersion: 2 },
+    telemetry: { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, attempts: 0, turns: 0, tools: 0, wallTimeMs: 0, queueTimeMs: 0, controlFailures: 0, attentionEvents: 0, notificationCount: 0, notificationBytes: 0, parentWakeCount: 0, lastStatusBytes: 0 },
+    notifications: [],
+    externalEvidence: [],
     nodes: {
       context: { spec: { id: "context", agent: "scout", task: "map", dependsOn: [] }, status: "queued", attempts: [] },
       build: { spec: { id: "build", agent: "worker", task: "build", dependsOn: ["context"] }, status: "queued", attempts: [] },
@@ -62,6 +72,8 @@ test("releases only nodes whose dependencies succeeded", () => {
   const run = workflow();
   assert.deepEqual(readyNodeIds(run), ["context"]);
   run.nodes.context.status = "succeeded";
+  run.nodes.context.attempts.push({ id: "attempt-1", kind: "legacy", rpcRequestId: "legacy", ownerSessionId: "session", requestedAt: Date.now(), state: "succeeded", sessionRoot: "/tmp", dependencyAttemptIds: {}, controls: [], completionSeen: true, controlAvailable: false, lookupAvailable: false });
+  run.nodes.context.authoritativeAttemptId = "attempt-1";
   assert.deepEqual(readyNodeIds(run), ["build"]);
   run.nodes.build.status = "failed";
   assert.equal(effectiveNodeStatus(run, run.nodes.review), "blocked");

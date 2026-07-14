@@ -17,11 +17,14 @@ import {
 
 export interface FleetActions {
   snapshot(): WorkflowRun[];
+  isControllable(workflowId: string): boolean;
   subscribe(listener: () => void): () => void;
-  resume(workflowId: string): Promise<void>;
+  resume(workflowId: string, nodeId: string): Promise<void>;
   pause(workflowId: string): Promise<void>;
   stopNode(workflowId: string, nodeId: string): Promise<void>;
   retryNode(workflowId: string, nodeId: string): Promise<void>;
+  takeover(workflowId: string, confirmation: { revision: number; leaseId: string; leaseEpoch: number; ownerProcessId?: number }): Promise<void>;
+  confirm(title: string, message: string): Promise<boolean>;
   notify(message: string, level: "info" | "warning" | "error"): void;
 }
 
@@ -42,6 +45,7 @@ const GLYPHS: Record<string, string> = {
   paused: "Ⅱ",
   orphaned: "?",
   stopped: "■",
+  invalidated: "×",
 };
 
 function formatDuration(milliseconds: number | undefined): string {
@@ -67,6 +71,7 @@ export class FleetOverlay implements Component {
   private detailsOnly = false;
   private disposed = false;
   private actionRunning = false;
+  private showHistory = false;
   private readonly unsubscribe: () => void;
   private readonly renderTimer: NodeJS.Timeout;
 
@@ -107,20 +112,56 @@ export class FleetOverlay implements Component {
       this.tui.requestRender();
       return;
     }
+    if (matchesKey(data, "h")) {
+      this.showHistory = !this.showHistory;
+      this.clampSelection();
+      this.tui.requestRender();
+      return;
+    }
 
     const selected = this.entries()[this.selected];
     if (!selected || this.actionRunning) return;
-    if (matchesKey(data, "u")) void this.runAction(() => this.actions.resume(selected.workflow.id));
-    else if (matchesKey(data, "p")) void this.runAction(() => this.actions.pause(selected.workflow.id));
-    else if (matchesKey(data, "r")) void this.runAction(() => this.actions.retryNode(selected.workflow.id, selected.node.spec.id));
-    else if (matchesKey(data, "x")) void this.runAction(() => this.actions.stopNode(selected.workflow.id, selected.node.spec.id));
+    const attempt = currentAttempt(selected.node);
+    const controllable = this.actions.isControllable(selected.workflow.id);
+    const foreign = !controllable;
+    if (matchesKey(data, "u")) {
+      if (!controllable || selected.node.status !== "paused" || !attempt || attempt.kind === "legacy") return this.actions.notify("Resume is available only for a locally owned, confirmed paused authoritative v2 attempt.", "warning");
+      void this.runAction(() => this.actions.resume(selected.workflow.id, selected.node.spec.id));
+    } else if (matchesKey(data, "p")) {
+      if (foreign || selected.node.status !== "running" || !attempt || attempt.kind === "legacy") return this.actions.notify("Pause is disabled for foreign, legacy, stale, or non-running attempts.", "warning");
+      void this.runAction(() => this.actions.pause(selected.workflow.id));
+    } else if (matchesKey(data, "r")) {
+      if (!controllable || !attempt || attempt.kind === "legacy" || !["succeeded", "failed", "paused", "stopped"].includes(selected.node.status)) return this.actions.notify("Retry is disabled for foreign, legacy, live, stale, or non-terminal attempts.", "warning");
+      void this.runAction(async () => {
+        const confirmed = await this.actions.confirm("Retry node?", `Retry '${selected.node.spec.id}' and invalidate all descendant successes?`);
+        if (confirmed) await this.actions.retryNode(selected.workflow.id, selected.node.spec.id);
+      });
+    } else if (matchesKey(data, "x")) {
+      if (foreign || !["running", "launching"].includes(selected.node.status) || !attempt || attempt.kind === "legacy") return this.actions.notify("Stop is disabled for foreign, legacy, stale, or non-live attempts.", "warning");
+      void this.runAction(async () => {
+        const confirmed = await this.actions.confirm("Stop node?", `Stop authoritative run ${attempt.packageRunId ?? "unknown"}?`);
+        if (confirmed) await this.actions.stopNode(selected.workflow.id, selected.node.spec.id);
+      });
+    } else if (matchesKey(data, "t")) {
+      if (!foreign) return this.actions.notify("This workflow is already locally owned.", "warning");
+      void this.runAction(async () => {
+        const workflow = selected.workflow;
+        const confirmed = await this.actions.confirm("Take over workflow?", `Take over ${workflow.id} only if owner PID ${workflow.ownerProcessId ?? "unknown"} is dead?`);
+        if (confirmed) await this.actions.takeover(workflow.id, { revision: workflow.stateRevision, leaseId: workflow.ownerLeaseId, leaseEpoch: workflow.ownerLeaseEpoch, ownerProcessId: workflow.ownerProcessId });
+      });
+    }
   }
 
   render(width: number): string[] {
     const innerWidth = Math.max(20, width - 2);
     const entries = this.entries();
     const selected = entries[this.selected];
-    const title = ` Fleet · ${this.actions.snapshot().length} workflows · ${entries.length} agents `;
+    const all = this.actions.snapshot();
+    const live = all.flatMap((workflow) => Object.values(workflow.nodes)).filter((node) => ["launching", "running", "pausing", "stopping"].includes(node.status)).length;
+    const attention = all.flatMap((workflow) => Object.values(workflow.nodes)).filter((node) => currentAttempt(node)?.telemetry?.activityState === "needs_attention").length;
+    const recorded = all.flatMap((workflow) => Object.values(workflow.nodes)).reduce((sum, node) => sum + node.attempts.length, 0);
+    const external = all.reduce((sum, workflow) => sum + (workflow.externalEvidence?.length ?? 0), 0);
+    const title = ` Fleet · ${live} live · ${attention} attention · ${recorded} recorded · ${external} external · ${all.length} workflows `;
     const lines = [
       this.border("╭") + this.theme.fg("accent", padAnsi(title, innerWidth)) + this.border("╮"),
     ];
@@ -138,7 +179,7 @@ export class FleetOverlay implements Component {
     }
 
     const busy = this.actionRunning ? " · action running" : "";
-    lines.push(this.row(this.theme.fg("dim", ` ↑↓ select · tab pane · u resume · p pause · r retry · x stop · esc close${busy}`), innerWidth));
+    lines.push(this.row(this.theme.fg("dim", ` ↑↓ select · tab pane · h history · u resume · p pause · r retry · x stop · t takeover · esc close${busy}`), innerWidth));
     lines.push(this.border("╰") + this.border("─".repeat(innerWidth)) + this.border("╯"));
     return lines;
   }
@@ -152,7 +193,7 @@ export class FleetOverlay implements Component {
   }
 
   private entries(): NodeRef[] {
-    return this.actions.snapshot().flatMap((workflow) => topologicalNodeIds(workflow.nodes).map((id) => ({
+    return this.actions.snapshot().filter((workflow) => this.showHistory || !["succeeded", "stopped"].includes(workflow.status)).flatMap((workflow) => topologicalNodeIds(workflow.nodes).map((id) => ({
       workflow,
       node: workflow.nodes[id],
     })));
@@ -192,29 +233,36 @@ export class FleetOverlay implements Component {
 
   private renderDetails({ workflow, node }: NodeRef, width: number, limit: number): string[] {
     const attempt = currentAttempt(node);
-    const snapshot = attempt?.statusSnapshot;
-    const step = snapshot?.steps?.[0];
+    const snapshot = attempt?.telemetry;
     const startedAt = attempt?.startedAt ?? snapshot?.startedAt;
     const endedAt = attempt?.endedAt ?? snapshot?.endedAt;
     const elapsed = startedAt ? (endedAt ?? Date.now()) - startedAt : undefined;
-    const tokens = snapshot?.totalTokens ?? step?.tokens;
-    const cost = snapshot?.totalCost ?? step?.totalCost;
+    const tokens = snapshot?.totalTokens;
+    const cost = snapshot?.totalCost;
     const outputRate = tokens?.output && elapsed ? tokens.output / (elapsed / 1000) : undefined;
-    const logs = step?.recentOutput?.slice(-Math.max(1, limit - 11)) ?? [];
+    const foreign = !this.actions.isControllable(workflow.id);
     const status = effectiveNodeStatus(workflow, node);
     const lines = [
       this.theme.bold(` ${node.spec.label ?? node.spec.id}`),
-      ` ${this.statusColor(status, `${GLYPHS[status]} ${status}`)} · ${node.spec.agent}`,
+      ` ${this.statusColor(status, `${GLYPHS[status]} ${status}`)}${snapshot?.activityState === "needs_attention" ? " · attention" : ""} · ${node.spec.agent}`,
       ` deps       ${node.spec.dependsOn.join(", ") || "none"}`,
-      ` model      ${step?.model ?? node.spec.model ?? "inherited"} · ${step?.thinking ?? node.spec.thinking ?? "role default"}`,
+      ` lineage    ${attempt?.kind ?? "none"}${attempt && attempt.kind !== "legacy" && attempt.previousAttemptId ? ` ← ${attempt.previousAttemptId}` : ""}`,
+      ` attempts   ${node.attempts.length} recorded · ${Math.max(0, node.attempts.length - 1)} superseded`,
+      ` provenance ${attempt?.id ?? "—"}${attempt && attempt.kind !== "legacy" ? ` · lease ${attempt.launchLeaseEpoch}` : ""}`,
+      ` authority  ${foreign ? "foreign-owned · read-only" : attempt?.kind === "legacy" ? "legacy · read-only" : "authoritative"}`,
+      ` run        ${attempt?.packageRunId ?? "—"}`,
+      ` cwd        ${node.spec.cwd ? `${workflow.executionCwd}/${node.spec.cwd}` : workflow.executionCwd}`,
+      ` model      ${snapshot?.model ?? node.spec.model ?? "inherited"} · ${snapshot?.thinking ?? node.spec.thinking ?? "role default"}`,
       ` elapsed    ${formatDuration(elapsed)} · TTFB —`,
       ` tokens     ${formatTokens(tokens?.input)} in · ${formatTokens(tokens?.output)} out · ${formatTokens(tokens?.total)} total`,
       ` speed      ${outputRate === undefined ? "—" : `${outputRate.toFixed(1)} output tok/s`}`,
       ` cost       ${cost ? `$${cost.costUsd.toFixed(4)}` : "—"}`,
-      ` steps      ${snapshot?.turnCount ?? step?.turnCount ?? "—"} turns · ${snapshot?.toolCount ?? step?.toolCount ?? "—"} tools`,
-      ` current    ${snapshot?.currentTool ?? step?.currentTool ?? "—"}${snapshot?.currentPath ?? step?.currentPath ? ` · ${snapshot?.currentPath ?? step?.currentPath}` : ""}`,
-      this.theme.fg("borderMuted", " log tail"),
-      ...(logs.length > 0 ? logs.map((line) => ` ${this.theme.fg("dim", line)}`) : [` ${this.theme.fg("muted", "No output yet.")}`]),
+      ` steps      ${snapshot?.turnCount ?? "—"} turns · ${snapshot?.toolCount ?? "—"} tools`,
+      ` current    ${snapshot?.currentTool ?? "—"}${snapshot?.currentPath ? ` · ${snapshot.currentPath}` : ""}`,
+      ` terminal   ${snapshot?.terminalReason ?? "—"}${snapshot?.terminalControlRequestId ? ` · ${snapshot.terminalControlRequestId}` : ""}`,
+      ` external   ${workflow.externalEvidence?.filter((item) => item.sessionFile === attempt?.childSessionFile).length ?? 0} read-only related runs`,
+      this.theme.fg("borderMuted", " artifact"),
+      ` ${this.theme.fg("dim", attempt?.asyncDir ?? "No runtime artifact yet.")}`,
     ];
     return lines.slice(0, limit).map((line) => truncateToWidth(line, width, "…", true));
   }

@@ -17,7 +17,7 @@ Two custom prompt templates are intentionally exposed:
 
 `/orchestrate` can now create durable dependency-aware workflows through the `workflow` tool. Each node names its prerequisites; ready independent nodes run concurrently, while a dependent node launches only after every prerequisite succeeds. The scheduler caps all workflow activity at four agents globally and accepts a per-workflow limit from one to eight. Each node may override its role, model, reasoning effort, and timeout.
 
-`/fleet` opens a responsive Pi-native overlay for the live and historical fleet. It shows dependencies, queue and run state, model and effort, elapsed time, tokens, output speed, cost, turns, tool calls, current activity, and recent output. Use the arrow keys to select, `tab` to switch panes, `u` to resume, `p` to pause, `r` to retry a stopped or failed node, `x` to stop it, and `esc` to close.
+`/fleet` opens a responsive Pi-native overlay for live agents, recorded attempts, and read-only external evidence. It shows dependencies, lineage, ownership, queue and run state, attention, model and effort, elapsed time, tokens, output speed, cost, turns, tool calls, current activity, and causal terminal reasons. Use the arrow keys to select, `tab` to switch panes, `h` to include terminal workflow history, `u` to resume, `p` to pause, `r` to retry a terminal node, `x` to stop it, and `t` to request an explicitly confirmed dead-owner takeover. Unsafe actions are disabled for legacy, foreign, superseded, stale, and non-authoritative attempts.
 
 The package recipes `/c7-docs`, `/gather-context-and-clarify`, `/parallel-cleanup`, `/parallel-context-build`, `/parallel-handoff-plan`, `/parallel-research`, `/parallel-review`, and `/review-loop` are filtered out. This removes menu clutter only. Context7's `resolve-library-id` and `query-docs` tools and the `pi-subagents` engine remain loaded.
 
@@ -36,7 +36,7 @@ The package recipes `/c7-docs`, `/gather-context-and-clarify`, `/parallel-cleanu
 
 Installed packages are pinned in `settings.json`:
 
-- `pi-subagents@0.34.0` supplies the event-driven subagent runtime. Enabled built-ins are `worker`, `scout`, `reviewer`, and `delegate`; `researcher`, `context-builder`, `planner`, and `oracle` are disabled. Roles inherit the selected parent model unless a run overrides it. Their package reasoning defaults are high, low, high, and inherited respectively. The session spawn budget is raised to 256 so 64-node workflows and retries fit within the package guardrail.
+- Hasan's `hhushhas/pi-subagents` fork is immutably pinned to commit `b530e961c4aaa2fd936e489c12ee0a7b3cbade36`. It supplies the event-driven subagent runtime and workflow RPC protocol v2. Enabled built-ins are `worker`, `scout`, `reviewer`, and `delegate`; `researcher`, `context-builder`, `planner`, and `oracle` are disabled. Roles inherit the selected parent model unless a run overrides it. Their package reasoning defaults are high, low, high, and inherited respectively. The session spawn budget is raised to 256 so 64-node workflows and retries fit within the package guardrail.
 - `@upstash/context7-pi@0.1.1` supplies current library-documentation tools.
 - `pi-extension-auto-name@0.3.3` names sessions automatically.
 - Ben Davis's `my-pi-setup` is pinned to commit `8feb880c...`; only ask-user, Firecrawl search/scrape, git info, model info, UI customization, and the GitHub Dark Default theme load.
@@ -44,9 +44,13 @@ Installed packages are pinned in `settings.json`:
 
 ## Workflow state and recovery
 
-Workflow state lives outside Git under `~/.pi/agent/workflow-runs/<project-hash>/<workflow-id>/`. Node attempts use their own durable session directories, so retries never overwrite earlier evidence. A live owner process keeps its workflow lease, so another Pi session may observe that workflow but cannot relaunch or control it. If Pi exits with work still active, the next interactive startup marks that workflow as awaiting recovery and asks whether to resume it. Declining leaves it paused; nothing relaunches automatically. A paused node resumes as a fresh attempt because the current `pi-subagents` RPC has no true child-session resume operation.
+Workflow state lives outside Git under `~/.pi/agent/workflow-runs/<project-hash>/<workflow-id>/`. Schema v2 separates the project directory from the declared execution directory, keeps every attempt and prerequisite-attempt binding, records causal controls and terminal reasons, and fences writes with a kernel lock, state revision, lease ID, and immutable lease epoch. Node attempts use distinct durable session directories, so resume and retry append lineage without overwriting evidence.
 
-The scheduler builds on `pi-subagents@0.34.0` rather than replacing it. Its public event RPC starts, inspects, interrupts, and stops child runs; status artifacts provide the metrics displayed by `/fleet`. TTFB is shown as unavailable because the package does not currently expose a reliable first-token timestamp. Native `pi-subagents` completion notifications still wake the parent session in addition to updating the workflow.
+Only the owning Pi process can launch or control a workflow. Another session may observe it, but takeover requires an exact inspected revision and lease, a stale heartbeat, a dead owner PID, and explicit confirmation; concurrent claimants are fenced atomically. A paused node resumes through protocol v2 from its existing child JSONL while preserving the complete effective execution contract. Retrying a prerequisite first stops live descendants, invalidates every descendant success, and binds replacement work to the new prerequisite attempt. Runs revived outside the workflow appear as external read-only evidence and never release dependencies or receive workflow controls.
+
+Legacy schema-v1 workflows are never controlled in place. Live or queued v1 state remains observation-only; quiescent state migrates through a byte-for-byte backup and restartable journal. A failed backup or journal verification leaves controls disabled. Workflow-owned children use event-only completion notifications, so one bounded workflow transition wakes the parent instead of replaying each child report. TTFB remains unavailable because the package does not expose a reliable first-token timestamp.
+
+Model-facing workflow status is a bounded projection under 32 KiB, node inspection is under 8 KiB, and terminal notifications are under 1 KiB. Task briefs, report bodies, capabilities, and raw child transcripts are never serialized into those surfaces.
 
 ## Prompt, skill, and slash command
 
@@ -78,3 +82,5 @@ When changing the setup:
 ## Known caveats
 
 The installed auto-name package has a local wording adjustment that favors English titles. A package update may overwrite that cache-level patch; replace it with a tracked local extension if naming regresses. Pi's overlay API is still experimental, so keep the pinned Pi version until `/fleet` has been retested against an upgrade. The local package source is an absolute machine path and must be changed if the repository moves.
+
+TTFB is intentionally displayed as unavailable until the child runtime emits a trustworthy first-token timestamp. Token, cost, turn, tool, activity, and terminal metrics are available now; this release does not infer TTFB from process startup or status-write times.
