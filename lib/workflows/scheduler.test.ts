@@ -161,6 +161,8 @@ test("stop remains pending until the exact control id is causally confirmed", as
     const workflow = await h.scheduler.create({ name: "control proof", nodes: [{ id: "only", agent: "worker", task: "only" }] });
     await h.scheduler.stopNode(workflow.id, "only");
     assert.equal(h.scheduler.get(workflow.id).nodes.only.status, "stopping");
+    await assert.rejects(h.scheduler.stopNode(workflow.id, "only"), /stop control in progress/);
+    assert.equal(h.scheduler.get(workflow.id).nodes.only.status, "stopping");
     const attempt = h.scheduler.get(workflow.id).nodes.only.attempts[0]!;
     await h.rpc.finish("run-1", "completed");
     await h.scheduler.tick();
@@ -189,6 +191,7 @@ test("pause and resume append lineage and preserve the child session", async () 
     await h.scheduler.pause(workflow.id);
     await h.scheduler.tick();
     assert.equal(h.scheduler.get(workflow.id).nodes.only.status, "paused");
+    assert.equal(h.scheduler.get(workflow.id).status, "paused");
     await h.scheduler.resume(workflow.id, "only");
     const node = h.scheduler.get(workflow.id).nodes.only;
     assert.equal(node.attempts.length, 2);
@@ -233,25 +236,45 @@ test("a dependent binds to the resumed prerequisite attempt", async () => {
 });
 
 test("retrying a succeeded prerequisite invalidates and rebinds every descendant", async () => {
-  const h = await harness("pi-dag-retry-lineage-", 1);
+  const h = await harness("pi-dag-retry-lineage-", 3);
   try {
     const workflow = await h.scheduler.create({ name: "retry lineage", nodes: [
       { id: "first", agent: "worker", task: "first" },
       { id: "second", agent: "worker", task: "second", dependsOn: ["first"] },
+      { id: "third", agent: "worker", task: "third", dependsOn: ["second"] },
     ] });
     await h.rpc.finish("run-1", "completed");
     await h.scheduler.tick();
     await h.rpc.finish("run-2", "completed");
     await h.scheduler.tick();
+    await h.rpc.finish("run-3", "completed");
+    await h.scheduler.tick();
     await h.scheduler.retryNode(workflow.id, "first");
     const invalidated = h.scheduler.get(workflow.id).nodes.second;
+    const invalidatedGrandchild = h.scheduler.get(workflow.id).nodes.third;
     assert.equal(invalidated.status, "queued");
     assert.equal(invalidated.authoritativeAttemptId, undefined);
     assert.equal(invalidated.invalidatedByAttemptId, "attempt-1");
-    await h.rpc.finish("run-3", "completed");
+    assert.equal(invalidatedGrandchild.authoritativeAttemptId, undefined);
+    await h.rpc.finish("run-4", "completed");
     await h.scheduler.tick();
-    assert.equal(h.rpc.launches.length, 4);
+    assert.equal(h.rpc.launches.length, 5);
+    assert.equal(h.rpc.launches[4]?.params.task, "second");
     assert.equal(invalidated.attempts[1]?.dependencyAttemptIds.first, "attempt-2");
+    assert.equal(invalidatedGrandchild.attempts.length, 1);
+  } finally { h.scheduler.dispose(); await rm(h.root, { recursive: true, force: true }); }
+});
+
+test("retry rejects running and queued targets without launching replacements", async () => {
+  const h = await harness("pi-dag-retry-state-", 2);
+  try {
+    const workflow = await h.scheduler.create({ name: "retry state", nodes: [
+      { id: "first", agent: "worker", task: "first" },
+      { id: "second", agent: "worker", task: "second", dependsOn: ["first"] },
+    ] });
+    await assert.rejects(h.scheduler.retryNode(workflow.id, "first"), /terminal state.*running/);
+    await assert.rejects(h.scheduler.retryNode(workflow.id, "second"), /terminal state.*queued/);
+    assert.equal(h.rpc.launches.length, 1);
   } finally { h.scheduler.dispose(); await rm(h.root, { recursive: true, force: true }); }
 });
 

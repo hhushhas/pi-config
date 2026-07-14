@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  currentAttempt,
   deriveWorkflowStatus,
   effectiveNodeStatus,
   readyNodeIds,
@@ -82,4 +83,15 @@ test("releases only nodes whose dependencies succeeded", () => {
   run.status = "awaiting_resume";
   for (const node of Object.values(run.nodes)) node.status = "succeeded";
   assert.equal(deriveWorkflowStatus(run), "succeeded");
+
+  run.nodes.build.invalidatedAt = Date.now();
+  run.nodes.build.authoritativeAttemptId = undefined;
+  assert.equal(currentAttempt(run.nodes.build), undefined);
+
+  run.status = "pausing";
+  for (const node of Object.values(run.nodes)) node.status = "paused";
+  assert.equal(deriveWorkflowStatus(run), "paused");
+  run.status = "stopping";
+  for (const node of Object.values(run.nodes)) node.status = "stopped";
+  assert.equal(deriveWorkflowStatus(run), "stopped");
 });

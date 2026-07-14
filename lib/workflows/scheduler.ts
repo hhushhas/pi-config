@@ -192,6 +192,8 @@ export class WorkflowScheduler {
   private async stopWorkflowInternal(workflowId: string): Promise<void> {
     this.assertLocallyControllable(workflowId);
     const workflow = this.get(workflowId);
+    const transitional = Object.values(workflow.nodes).find((node) => ["pausing", "stopping"].includes(node.status));
+    if (transitional) throw new Error(`Node '${transitional.spec.id}' already has a control in progress; wait for causal confirmation before stopping the workflow.`);
     workflow.status = "stopping";
     const controls: Array<{ node: WorkflowNode; attempt: LaunchedAttemptV2; control: AttemptControl }> = [];
     for (const node of Object.values(workflow.nodes)) {
@@ -240,6 +242,9 @@ export class WorkflowScheduler {
       return;
     }
     if (!attempt || attempt.kind === "legacy") throw new Error(`Node '${nodeId}' has no controllable authoritative attempt.`);
+    if (["pausing", "stopping"].includes(node.status)) {
+      throw new Error(`Node '${nodeId}' already has a ${node.status === "pausing" ? "pause" : "stop"} control in progress; wait for causal confirmation.`);
+    }
     if (node.status === "launching") {
       this.prepareControl(workflow, node, "stop");
       if (persist) await this.store.save(workflow);
@@ -263,9 +268,8 @@ export class WorkflowScheduler {
         }
         throw error;
       }
-    } else if (!["succeeded", "failed", "paused", "stopped", "invalidated"].includes(node.status)) {
-      node.status = "stopped";
-      attempt.state = "stopped";
+    } else if (!["succeeded", "failed", "paused", "stopped", "orphaned", "invalidated"].includes(node.status)) {
+      throw new Error(`Node '${nodeId}' is not in a stoppable lifecycle state.`);
     }
     if (persist) await this.store.save(workflow);
     this.emit();
@@ -294,6 +298,9 @@ export class WorkflowScheduler {
     const workflow = this.get(workflowId);
     const node = workflow.nodes[nodeId];
     if (!node) throw new Error(`Node '${nodeId}' was not found.`);
+    if (!["succeeded", "failed", "paused", "stopped", "orphaned"].includes(node.status)) {
+      throw new Error(`Node '${nodeId}' can be retried only from a terminal state; current state is '${node.status}'.`);
+    }
     const descendants = descendantsOf(workflow, nodeId);
     const requestedStops: Array<{ nodeId: string; attemptId: string; controlRequestId: string }> = [];
     for (const descendantId of descendants) {

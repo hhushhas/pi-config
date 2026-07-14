@@ -131,7 +131,7 @@ export class FleetOverlay implements Component {
       if (foreign || selected.node.status !== "running" || !attempt || attempt.kind === "legacy") return this.actions.notify("Pause is disabled for foreign, legacy, stale, or non-running attempts.", "warning");
       void this.runAction(() => this.actions.pause(selected.workflow.id));
     } else if (matchesKey(data, "r")) {
-      if (!controllable || !attempt || attempt.kind === "legacy" || !["succeeded", "failed", "paused", "stopped"].includes(selected.node.status)) return this.actions.notify("Retry is disabled for foreign, legacy, live, stale, or non-terminal attempts.", "warning");
+      if (!controllable || !attempt || attempt.kind === "legacy" || !["succeeded", "failed", "paused", "stopped", "orphaned"].includes(selected.node.status)) return this.actions.notify("Retry is disabled for foreign, legacy, live, stale, or non-terminal attempts.", "warning");
       void this.runAction(async () => {
         const confirmed = await this.actions.confirm("Retry node?", `Retry '${selected.node.spec.id}' and invalidate all descendant successes?`);
         if (confirmed) await this.actions.retryNode(selected.workflow.id, selected.node.spec.id);

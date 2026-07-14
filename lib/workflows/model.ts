@@ -261,9 +261,9 @@ export function topologicalNodeIds(nodes: Record<string, Pick<WorkflowNode, "spe
 }
 
 export function currentAttempt(node: WorkflowNode): NodeAttempt | undefined {
-  return node.authoritativeAttemptId
-    ? node.attempts.find((attempt) => attempt.id === node.authoritativeAttemptId)
-    : node.attempts.at(-1);
+  if (node.authoritativeAttemptId) return node.attempts.find((attempt) => attempt.id === node.authoritativeAttemptId);
+  if (node.invalidatedAt !== undefined) return undefined;
+  return node.attempts.at(-1);
 }
 
 export function successfulAuthoritativeAttempt(node: WorkflowNode): NodeAttempt | undefined {
@@ -288,8 +288,11 @@ export function readyNodeIds(workflow: WorkflowRun): string[] {
 export function deriveWorkflowStatus(workflow: WorkflowRun): WorkflowRunStatus {
   const nodes = Object.values(workflow.nodes);
   if (nodes.every((node) => node.status === "succeeded")) return "succeeded";
-  if (["pausing", "stopping", "awaiting_resume", "paused", "stopped", "failed"].includes(workflow.status)) return workflow.status;
-  if (nodes.some((node) => ["running", "launching", "pausing", "stopping"].includes(node.status))) return "active";
+  const hasLiveNode = nodes.some((node) => ["running", "launching", "pausing", "stopping"].includes(node.status));
+  if (workflow.status === "pausing") return hasLiveNode ? "pausing" : "paused";
+  if (workflow.status === "stopping") return hasLiveNode ? "stopping" : "stopped";
+  if (["awaiting_resume", "paused", "stopped", "failed"].includes(workflow.status)) return workflow.status;
+  if (hasLiveNode) return "active";
   if (readyNodeIds(workflow).length > 0) return "active";
   return "blocked";
 }
