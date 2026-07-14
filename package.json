@@ -1,0 +1,27 @@
+{
+  "name": "pi-config",
+  "private": true,
+  "type": "module",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["extensions/dag-workflows.ts"]
+  },
+  "scripts": {
+    "test": "tsx --test lib/**/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.6",
+    "@earendil-works/pi-tui": "0.80.6",
+    "@types/node": "24.12.4",
+    "tsx": "4.23.0",
+    "typebox": "1.1.38",
+    "typescript": "5.9.3"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "packageManager": "pnpm@11.1.3"
+}

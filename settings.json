@@ -27,6 +27,15 @@
     },
     "npm:@ryan_nookpi/pi-extension-auto-name@0.3.3",
     {
+      "source": "/Users/macmini/code/pi-config",
+      "extensions": [
+        "+extensions/dag-workflows.ts"
+      ],
+      "skills": [],
+      "prompts": [],
+      "themes": []
+    },
+    {
       "source": "git:github.com/davis7dotsh/my-pi-setup@8feb880c9275faaaccb9e4a00ec1ea800cfbfc9f",
       "extensions": [
         "!extensions/**",
@@ -44,6 +53,7 @@
     }
   ],
   "subagents": {
+    "maxSubagentSpawnsPerSession": 256,
     "agentOverrides": {
       "researcher": {
         "disabled": true

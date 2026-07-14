@@ -2,6 +2,8 @@
 auth.json
 sessions/
 npm/
+node_modules/
 git/
 generated-images/
+.pi-subagents/
 .DS_Store

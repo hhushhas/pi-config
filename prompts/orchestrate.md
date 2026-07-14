@@ -7,6 +7,8 @@ Orchestrate this task with Pi subagents: $@
 
 Delegation is explicitly authorized for this request only. Keep the parent agent responsible for scope, decisions, integration, and final verification.
 
+When the work has dependencies, use the `workflow` tool to define a DAG. Give every node a stable ID and explicit `dependsOn` list; independent ready nodes may run concurrently, while downstream nodes must wait for successful prerequisites. Use direct subagent calls only for simple one-off or parallel work without dependencies.
+
 - Delegate only work that benefits from independent context, parallelism, or a focused specialist. Do simple work directly.
 - Use `scout` for codebase reconnaissance, `worker` for bounded implementation, `reviewer` for evidence-backed review, and `delegate` for narrowly scoped general work.
 - Give every subagent a self-contained brief: objective, constraints, working directory, owned files or responsibility, expected output, and verification gate. Warn it that other agents may be editing the workspace and it must preserve unrelated changes.
