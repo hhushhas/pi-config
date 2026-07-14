@@ -4,7 +4,7 @@
   "type": "module",
   "keywords": ["pi-package"],
   "pi": {
-    "extensions": ["extensions/dag-workflows.ts"]
+    "extensions": ["extensions/ui-dashboard.ts", "extensions/dag-workflows.ts"]
   },
   "scripts": {
     "test": "tsx --test lib/**/*.test.ts",

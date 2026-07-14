@@ -6,6 +6,7 @@ import { SubagentRpcClient } from "../lib/workflows/rpc-client.ts";
 import { WorkflowScheduler } from "../lib/workflows/scheduler.ts";
 import { WorkflowStore } from "../lib/workflows/store.ts";
 import { inspectProjection, listProjection, statusProjection } from "../lib/workflows/projection.ts";
+import { WORKFLOW_INFO_CHANNEL } from "../lib/dashboard/state.ts";
 
 const ThinkingSchema = Type.Union([
   Type.Literal("off"),
@@ -118,6 +119,17 @@ export default function (pi: ExtensionAPI) {
         const workflows = scheduler?.snapshot() ?? [];
         const active = workflows.filter((workflow) => workflow.status === "active").length;
         const waiting = workflows.filter((workflow) => workflow.status === "awaiting_resume").length;
+        const live = workflows.filter((workflow) => Object.values(workflow.nodes).some((node) => ["launching", "running", "pausing", "stopping"].includes(node.status)));
+        const single = live.length === 1 ? live[0] : undefined;
+        pi.events.emit(WORKFLOW_INFO_CHANNEL, {
+          active: live.length,
+          runningAgents: live.reduce((total, workflow) => total + Object.values(workflow.nodes).filter((node) => ["launching", "running", "pausing", "stopping"].includes(node.status)).length, 0),
+          ...(single ? {
+            name: single.name,
+            completed: Object.values(single.nodes).filter((node) => node.status === "succeeded").length,
+            total: Object.keys(single.nodes).length,
+          } : {}),
+        });
         ctx.ui.setStatus("dag-workflows", active > 0 ? `${active} workflows active` : waiting > 0 ? `${waiting} workflows paused` : undefined);
       };
       statusUnsubscribe = scheduler.subscribe(updateStatus);
@@ -132,6 +144,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", (_event, ctx) => {
     ctx.ui.setStatus("dag-workflows", undefined);
+    pi.events.emit(WORKFLOW_INFO_CHANNEL, { active: 0, runningAgents: 0 });
     shutdown();
   });
 
