@@ -57,7 +57,7 @@ function loadActiveMs(file: string, entries: ReturnType<ExtensionContext["sessio
   }
 }
 
-export default function uiDashboard(pi: ExtensionAPI) {
+export default function uiDashboard(pi: ExtensionAPI, metricsRoot = join(getAgentDir(), "dashboard-session-metrics")) {
   let ctx: ExtensionContext | undefined;
   let model = emptyModelInfoState();
   let git = emptyGitInfoState();
@@ -159,7 +159,7 @@ export default function uiDashboard(pi: ExtensionAPI) {
     subscribeBus();
     const entries = nextCtx.sessionManager.getBranch();
     compactions = countCompactions(entries);
-    stateFile = join(getAgentDir(), "dashboard-session-metrics", `${nextCtx.sessionManager.getSessionId()}.json`);
+    stateFile = join(metricsRoot, `${nextCtx.sessionManager.getSessionId()}.json`);
     clock = new ActiveClock(loadActiveMs(stateFile, entries));
 
     if (renderTimer) clearInterval(renderTimer);
