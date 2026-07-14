@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ActiveClock, countCompactions, estimateHistoricalActiveMs, formatDuration } from "./metrics.ts";
+import { foregroundCount } from "../../extensions/ui-dashboard.ts";
 
 test("counts compactions and estimates completed active intervals", () => {
   const entries = [
@@ -21,4 +22,9 @@ test("active clock accumulates only active wall time", () => {
   clock.setActive(false, 20_000);
   assert.equal(clock.value(50_000), 15_000);
   assert.equal(formatDuration(clock.value(50_000)), "15s");
+});
+
+test("foreground count expands repeated parallel tasks", () => {
+  assert.equal(foregroundCount({ tasks: [{ agent: "reviewer", count: 4 }, { agent: "worker" }] }), 5);
+  assert.equal(foregroundCount({ chain: [{ parallel: [{ agent: "reviewer", count: 3 }, { agent: "worker", count: 2 }] }] }), 5);
 });

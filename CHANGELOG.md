@@ -13,3 +13,4 @@
 - Bounded model-facing workflow status, inspection, and notifications; serialized scheduler mutations to prevent interval races; and guarded Fleet actions by ownership, authority, lifecycle, and provenance.
 - Verified both releases end to end in fresh Pi sessions: dependency ordering, five-minute quiet-run safety, causal pause/resume and stop, live-descendant retry and rebinding, bounded parent wakes, metrics, and the Fleet overlay all passed against the installed immutable runtime pin.
 - Added a responsive custom footer that keeps session usage on the left and runtime/Git state on the right, with a separate activity row for non-idle working time, compaction count, live subagents, and workflow name/progress.
+- Hardened footer lifecycle tracking across reloads, paused workflows, repeated task counts, and changing async parallel groups without leaking event listeners.

@@ -18,6 +18,8 @@ import {
 
 const ASYNC_STARTED = "subagent:async-started";
 const ASYNC_COMPLETE = "subagent:async-complete";
+const ASYNC_DASHBOARD_REFRESH = "subagent:dashboard-refresh";
+const ASYNC_DASHBOARD_SNAPSHOT = "subagent:dashboard-snapshot";
 const RENDER_INTERVAL_MS = 1_000;
 const PERSIST_INTERVAL_MS = 10_000;
 
@@ -25,13 +27,16 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function foregroundCount(args: unknown): number {
+export function foregroundCount(args: unknown): number {
   if (!record(args) || args.async === true) return 0;
   if (typeof args.action === "string" && args.action !== "single") return 0;
-  if (Array.isArray(args.tasks)) return Math.max(1, args.tasks.length);
+  const taskCount = (task: unknown) => record(task) && typeof task.count === "number" && Number.isInteger(task.count) && task.count >= 1 ? task.count : 1;
+  if (Array.isArray(args.tasks)) return Math.max(1, args.tasks.reduce((total, task) => total + taskCount(task), 0));
   if (Array.isArray(args.chain)) {
     const first = args.chain[0];
-    return record(first) && Array.isArray(first.parallel) ? Math.max(1, first.parallel.length) : 1;
+    return record(first) && Array.isArray(first.parallel)
+      ? Math.max(1, first.parallel.reduce((total, task) => total + taskCount(task), 0))
+      : 1;
   }
   return typeof args.agent === "string" ? 1 : 0;
 }
@@ -64,10 +69,16 @@ export default function uiDashboard(pi: ExtensionAPI) {
   let renderTimer: ReturnType<typeof setInterval> | undefined;
   let lastPersistedAt = 0;
   let requestRender: (() => void) | undefined;
+  let asyncSnapshot = 0;
+  let busUnsubscribes: Array<() => void> = [];
   const foreground = new Map<string, number>();
   const asyncRuns = new Map<string, number>();
 
-  const runningSubagents = () => [...foreground.values(), ...asyncRuns.values()].reduce((total, count) => total + count, 0);
+  const runningSubagents = () => {
+    const foregroundTotal = [...foreground.values()].reduce((total, count) => total + count, 0);
+    const eventTotal = [...asyncRuns.values()].reduce((total, count) => total + count, 0);
+    return foregroundTotal + Math.max(eventTotal, asyncSnapshot);
+  };
 
   function syncClock(now = Date.now()): void {
     clock.setActive(rootActive || runningSubagents() > 0 || workflows.runningAgents > 0, now);
@@ -82,40 +93,59 @@ export default function uiDashboard(pi: ExtensionAPI) {
     lastPersistedAt = now;
   }
 
-  pi.events.on(MODEL_INFO_CHANNEL, (value) => {
+  const handleModelInfo = (value: unknown) => {
     if (!isModelInfoState(value)) return;
     model = value;
     requestRender?.();
-  });
+  };
 
-  pi.events.on(GIT_INFO_CHANNEL, (value) => {
+  const handleGitInfo = (value: unknown) => {
     if (!isGitInfoState(value)) return;
     git = value;
     requestRender?.();
-  });
+  };
 
-  pi.events.on(WORKFLOW_INFO_CHANNEL, (value) => {
+  const handleWorkflowInfo = (value: unknown) => {
     if (!isWorkflowInfoState(value)) return;
     workflows = value;
     syncClock();
     requestRender?.();
-  });
+  };
 
-  pi.events.on(ASYNC_STARTED, (value) => {
+  const handleAsyncStarted = (value: unknown) => {
     if (!ctx || !record(value) || value.sessionId !== ctx.sessionManager.getSessionId() || typeof value.id !== "string") return;
     asyncRuns.set(value.id, asyncCount(value));
     syncClock();
     requestRender?.();
-  });
+  };
 
-  pi.events.on(ASYNC_COMPLETE, (value) => {
+  const handleAsyncComplete = (value: unknown) => {
     if (!ctx || !record(value) || (typeof value.sessionId === "string" && value.sessionId !== ctx.sessionManager.getSessionId())) return;
     const id = typeof value.runId === "string" ? value.runId : typeof value.id === "string" ? value.id : undefined;
     if (!id) return;
     asyncRuns.delete(id);
     syncClock();
     requestRender?.();
-  });
+  };
+
+  const handleAsyncSnapshot = (value: unknown) => {
+    if (!ctx || !record(value) || value.sessionId !== ctx.sessionManager.getSessionId() || typeof value.runningAgents !== "number") return;
+    asyncSnapshot = Math.max(0, value.runningAgents);
+    syncClock();
+    requestRender?.();
+  };
+
+  function subscribeBus(): void {
+    for (const unsubscribe of busUnsubscribes) unsubscribe();
+    busUnsubscribes = [
+      pi.events.on(MODEL_INFO_CHANNEL, handleModelInfo),
+      pi.events.on(GIT_INFO_CHANNEL, handleGitInfo),
+      pi.events.on(WORKFLOW_INFO_CHANNEL, handleWorkflowInfo),
+      pi.events.on(ASYNC_STARTED, handleAsyncStarted),
+      pi.events.on(ASYNC_COMPLETE, handleAsyncComplete),
+      pi.events.on(ASYNC_DASHBOARD_SNAPSHOT, handleAsyncSnapshot),
+    ];
+  }
 
   pi.on("session_start", (_event, nextCtx) => {
     ctx = nextCtx;
@@ -125,6 +155,8 @@ export default function uiDashboard(pi: ExtensionAPI) {
     rootActive = false;
     foreground.clear();
     asyncRuns.clear();
+    asyncSnapshot = 0;
+    subscribeBus();
     const entries = nextCtx.sessionManager.getBranch();
     compactions = countCompactions(entries);
     stateFile = join(getAgentDir(), "dashboard-session-metrics", `${nextCtx.sessionManager.getSessionId()}.json`);
@@ -155,6 +187,7 @@ export default function uiDashboard(pi: ExtensionAPI) {
       if (now - lastPersistedAt >= PERSIST_INTERVAL_MS) persist(now);
     }, RENDER_INTERVAL_MS);
     pi.events.emit(REFRESH_CHANNEL, undefined);
+    pi.events.emit(ASYNC_DASHBOARD_REFRESH, undefined);
   });
 
   pi.on("agent_start", () => {
@@ -192,12 +225,15 @@ export default function uiDashboard(pi: ExtensionAPI) {
     rootActive = false;
     foreground.clear();
     asyncRuns.clear();
+    asyncSnapshot = 0;
     workflows = { active: 0, runningAgents: 0 };
     syncClock();
     persist();
     if (renderTimer) clearInterval(renderTimer);
     renderTimer = undefined;
     requestRender = undefined;
+    for (const unsubscribe of busUnsubscribes) unsubscribe();
+    busUnsubscribes = [];
     stateFile = undefined;
     ctx = undefined;
     if (shutdownCtx.mode === "tui") shutdownCtx.ui.setFooter(undefined);
