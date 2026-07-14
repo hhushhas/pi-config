@@ -72,7 +72,7 @@ export function renderFooter(snapshot: DashboardSnapshot, footerData: ReadonlyFo
   ];
 
   for (const [key, text] of [...footerData.getExtensionStatuses()].sort(([a], [b]) => a.localeCompare(b))) {
-    if (key === "dag-workflows") continue;
+    if (key === "dag-workflows" && snapshot.workflows.active > 0) continue;
     for (const statusLine of text.split("\n")) lines.push(truncateToWidth(statusLine, width, theme.fg("dim", "...")));
   }
   return lines;

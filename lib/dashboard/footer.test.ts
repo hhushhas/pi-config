@@ -27,3 +27,16 @@ test("footer groups session and orchestration metrics without overflowing", () =
     assert.match(lines[2] ?? "", /4 agents/);
   }
 });
+
+test("footer keeps paused workflow status visible", () => {
+  const pausedFooterData = { getExtensionStatuses: () => new Map([["dag-workflows", "1 workflow paused"]]) } as never;
+  const lines = renderFooter({
+    cwd: "/tmp/project",
+    model: { provider: "", modelId: "no-model", thinking: "off", contextWindow: 0, contextPercent: null, cost: 0, tokensPerSecond: null },
+    git: { branch: null, changedFiles: 0, pullRequest: null },
+    metrics: { activeMs: 0, compactions: 0, runningSubagents: 0 },
+    workflows: { active: 0, runningAgents: 0 },
+  }, pausedFooterData, theme, 80);
+
+  assert.equal(lines.at(-1), "1 workflow paused");
+});
