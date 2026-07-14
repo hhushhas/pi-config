@@ -18,7 +18,7 @@
   "hideThinkingBlock": false,
   "packages": [
     {
-      "source": "git:github.com/hhushhas/pi-subagents@b530e961c4aaa2fd936e489c12ee0a7b3cbade36",
+      "source": "git:github.com/hhushhas/pi-subagents@5cccd64d39a2e6a95ed557bde24dfcac1f17309e",
       "prompts": []
     },
     {

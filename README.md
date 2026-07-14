@@ -36,7 +36,7 @@ The package recipes `/c7-docs`, `/gather-context-and-clarify`, `/parallel-cleanu
 
 Installed packages are pinned in `settings.json`:
 
-- Hasan's `hhushhas/pi-subagents` fork is immutably pinned to commit `b530e961c4aaa2fd936e489c12ee0a7b3cbade36`. It supplies the event-driven subagent runtime and workflow RPC protocol v2. Enabled built-ins are `worker`, `scout`, `reviewer`, and `delegate`; `researcher`, `context-builder`, `planner`, and `oracle` are disabled. Roles inherit the selected parent model unless a run overrides it. Their package reasoning defaults are high, low, high, and inherited respectively. The session spawn budget is raised to 256 so 64-node workflows and retries fit within the package guardrail.
+- Hasan's `hhushhas/pi-subagents` fork is immutably pinned to commit `5cccd64d39a2e6a95ed557bde24dfcac1f17309e`. It supplies the event-driven subagent runtime and workflow RPC protocol v2. Enabled built-ins are `worker`, `scout`, `reviewer`, and `delegate`; `researcher`, `context-builder`, `planner`, and `oracle` are disabled. Roles inherit the selected parent model unless a run overrides it. Their package reasoning defaults are high, low, high, and inherited respectively. The session spawn budget is raised to 256 so 64-node workflows and retries fit within the package guardrail.
 - `@upstash/context7-pi@0.1.1` supplies current library-documentation tools.
 - `pi-extension-auto-name@0.3.3` names sessions automatically.
 - Ben Davis's `my-pi-setup` is pinned to commit `8feb880c...`; only ask-user, Firecrawl search/scrape, git info, model info, UI customization, and the GitHub Dark Default theme load.
