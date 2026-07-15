@@ -4,13 +4,26 @@
   "type": "module",
   "keywords": ["pi-package"],
   "pi": {
-    "extensions": ["extensions/ui-dashboard.ts", "extensions/dag-workflows.ts"]
+    "extensions": [
+      "extensions/ui-dashboard.ts",
+      "extensions/dag-workflows.ts",
+      "extensions/subagents/index.ts"
+    ]
   },
   "scripts": {
-    "test": "tsx --test lib/**/*.test.ts",
+    "test": "pnpm run test:core && pnpm run test:subagents",
+    "test:core": "tsx --test lib/**/*.test.ts",
+    "test:subagents": "tsx --test extensions/subagents/manager.test.ts extensions/subagents/result-delivery.test.ts extensions/subagents/context-usage.test.ts extensions/subagents/takeover.test.ts",
+    "test:subagents:live": "tsx --test extensions/subagents/claude.test.ts extensions/subagents/codex.test.ts",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.207",
+    "@anthropic-ai/sdk": "0.111.0",
+    "effect": "4.0.0-beta.97"
+  },
   "devDependencies": {
+    "@earendil-works/pi-ai": "0.80.6",
     "@earendil-works/pi-coding-agent": "0.80.6",
     "@earendil-works/pi-tui": "0.80.6",
     "@types/node": "24.12.4",
@@ -19,6 +32,7 @@
     "typescript": "5.9.3"
   },
   "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
     "typebox": "*"

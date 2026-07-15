@@ -46,7 +46,8 @@
       "source": "/Users/macmini/code/pi-config",
       "extensions": [
         "+extensions/ui-dashboard.ts",
-        "+extensions/dag-workflows.ts"
+        "+extensions/dag-workflows.ts",
+        "+extensions/subagents/index.ts"
       ],
       "skills": [],
       "prompts": [],

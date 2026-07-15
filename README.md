@@ -19,6 +19,10 @@ Two custom prompt templates are intentionally exposed:
 
 `/fleet` opens a responsive Pi-native overlay for live agents, recorded attempts, and read-only external evidence. It shows dependencies, lineage, ownership, queue and run state, attention, model and effort, elapsed time, tokens, output speed, cost, turns, tool calls, current activity, and causal terminal reasons. Use the arrow keys to select, `tab` to switch panes, `h` to include terminal workflow history, `u` to resume, `p` to pause, `r` to retry a terminal node, `x` to stop it, and `t` to request an explicitly confirmed dead-owner takeover. Unsafe actions are disabled for legacy, foreign, superseded, stale, and non-authoritative attempts.
 
+`/subagents` is the session-local multi-harness fleet for direct delegation. The `subagent_spawn` tool can launch isolated Pi, Claude Code, or Codex children with per-run model and reasoning overrides; four may run concurrently. Results return automatically without forcing the parent to wait. The full-screen dashboard shows backend, model, context utilization, elapsed time, and lifecycle. Enter opens a live conversation view with assistant reasoning, tool activity, queued messages, scrolling, steering or follow-up input, and abort controls; Escape returns to the same fleet selection.
+
+The two fleet surfaces have different guarantees. `/fleet` is durable and dependency-aware. `/subagents` provides richer direct interaction but keeps its registry in the parent session's memory; native child session files remain on disk, while dashboard entries are not reloaded after the parent shuts down. Direct Claude and Codex children run under the local coding agents' unrestricted permission modes, so prompts must carry the same repository and production-safety boundaries as the parent.
+
 The custom footer groups related information instead of flattening it into one status string. Directory, context usage, cost, and speed stay on the left; model/effort and Git state stay on the right. A separate activity row shows accumulated non-idle working time and compaction count on the left, then conditionally shows live subagents and active workflow progress on the right. Active time is wall-clock time during which the parent or one of its owned children is running, so user idle time is excluded and parallel children do not multiply the total. Checkpoints live outside Git under `~/.pi/agent/dashboard-session-metrics/` so the count survives reloads.
 
 The package recipes `/c7-docs`, `/gather-context-and-clarify`, `/parallel-cleanup`, `/parallel-context-build`, `/parallel-handoff-plan`, `/parallel-research`, `/parallel-review`, and `/review-loop` are filtered out. This removes menu clutter only. Context7's `resolve-library-id` and `query-docs` tools and the `pi-subagents` engine remain loaded.
@@ -33,6 +37,7 @@ The package recipes `/c7-docs`, `/gather-context-and-clarify`, `/parallel-cleanu
 | `extensions/manual-only-skills.ts` | `~/.pi/agent/extensions/manual-only-skills.ts` | Prevents automatic skill selection |
 | `extensions/openai-image-generation.ts` | `~/.pi/agent/extensions/openai-image-generation.ts` | Adds `generate_image` through Codex |
 | `extensions/dag-workflows.ts` | Loaded directly as a local Pi package | Adds the workflow tool, recovery prompt, and `/fleet` |
+| `extensions/subagents/*.ts` | Loaded directly as a local Pi package | Adds Pi, Claude Code, and Codex children plus `/subagents` conversation takeover |
 | `extensions/ui-dashboard.ts` | Loaded directly as a local Pi package | Adds the responsive footer and session activity tracking |
 | `lib/dashboard/*.ts` | Loaded through the local Pi package | Renders footer segments and tracks active time, compactions, subagents, and workflow progress |
 | `lib/workflows/*.ts` | Loaded through the local Pi package | Validates DAGs, schedules runs, persists state, and renders the fleet UI |
@@ -44,7 +49,7 @@ Installed packages are pinned in `settings.json`:
 - `@upstash/context7-pi@0.1.1` supplies current library-documentation tools.
 - `pi-extension-auto-name@0.3.3` names sessions automatically.
 - Ben Davis's `my-pi-setup` is pinned to commit `8feb880c...`; only ask-user, Firecrawl search/scrape, git info, model info, UI customization, and the GitHub Dark Default theme load.
-- This repository is loaded as a local Pi package for the dashboard, DAG scheduler, and fleet UI. Its runtime and TUI dependencies are pinned in `package.json` and installed with pnpm.
+- This repository is loaded as a local Pi package for the dashboard, DAG scheduler, durable Fleet, and the multi-harness `/subagents` UI derived from Ben Davis's `f992ae6` implementation. Its runtime and TUI dependencies are pinned in `package.json` and installed with pnpm. The exact `effect@4.0.0-beta.97` pin is narrowly excluded from pnpm's provenance-downgrade policy in `pnpm-workspace.yaml`; the broader maturity and trust policies remain enabled.
 
 ## Workflow state and recovery
 
