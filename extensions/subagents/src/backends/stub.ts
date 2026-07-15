@@ -118,6 +118,8 @@ const makeStubSession = (
       Effect.gen(function* () {
         yield* emit({ _tag: "RunStarted" });
         const failing = userText.trimStart().startsWith("FAIL:");
+        const crashStream = userText.trimStart().startsWith("CRASH_STREAM:");
+        const endStream = userText.trimStart().startsWith("END_STREAM:");
 
         const thinking = "Looking at the task and planning an approach...";
         for (const delta of chunked(thinking, 16)) {
@@ -184,6 +186,12 @@ const makeStubSession = (
           yield* emit({ _tag: "AssistantDelta", kind: "text", delta });
           yield* pause;
         }
+        if (crashStream) {
+          state.closed = true;
+          yield* Queue.end(events).pipe(Effect.ignore);
+          yield* Queue.end(inbox).pipe(Effect.ignore);
+          return;
+        }
         yield* emit({
           _tag: "AssistantMessage",
           parts: [{ type: "text", text: finalText }],
@@ -197,6 +205,11 @@ const makeStubSession = (
           _tag: "RunSettled",
           outcome: { _tag: "Completed", finalText },
         });
+        if (endStream) {
+          state.closed = true;
+          yield* Queue.end(events).pipe(Effect.ignore);
+          yield* Queue.end(inbox).pipe(Effect.ignore);
+        }
       });
 
     const queuedView = (): ReadonlyArray<QueuedMessage> =>

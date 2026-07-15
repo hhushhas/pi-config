@@ -238,7 +238,10 @@ const makeManager = Effect.gen(function* () {
     const candidates = [...entries.values()]
       .filter(
         (e) =>
-          e.snapshot.status !== "running" && !waitInterest.has(e.snapshot.id),
+          e.snapshot.status !== "running" &&
+          !e.restarting &&
+          !e.continuationPending &&
+          !waitInterest.has(e.snapshot.id),
       )
       .sort(
         (a, b) =>
@@ -292,6 +295,29 @@ const makeManager = Effect.gen(function* () {
       if (!disposed) onSettled?.(s, consumed);
     } catch {
       // The parent session may be unavailable; settlement stays final.
+    }
+    pruneSettled();
+  };
+
+  const failPendingContinuation = (entry: Entry, errorText: string) => {
+    if (!entry.continuationPending) return;
+    const s = entry.snapshot;
+    entry.continuationPending = false;
+    entry.restarting = false;
+    s.status = "error";
+    s.settledAt = Date.now();
+    s.errorText = bounded(errorText);
+    s.finalText = "";
+    s.liveAssistant = undefined;
+    entry.liveToolMap.clear();
+    s.liveTools = [];
+    s.queued = [];
+    const consumed = (waitInterest.get(s.id) ?? 0) > 0;
+    notify(s.id);
+    try {
+      if (!disposed) onSettled?.(s, consumed);
+    } catch {
+      // Parent delivery failure does not change the terminal state.
     }
     pruneSettled();
   };
@@ -458,13 +484,14 @@ const makeManager = Effect.gen(function* () {
                   _tag: "Failed",
                   errorText: "Backend event stream ended unexpectedly",
                 });
-              } else if (entry.continuationPending) {
-                entry.continuationPending = false;
-                entry.snapshot.queued = [];
-                entry.snapshot.errorText =
-                  "Backend ended before queued work could start";
-                notify(entry.snapshot.id);
               }
+              // settle() may have reserved an accepted queued continuation.
+              // With the stream gone it can never start, so terminate and
+              // deliver that second run explicitly instead of leaking a slot.
+              failPendingContinuation(
+                entry,
+                "Backend ended before queued work could start",
+              );
             }),
           ),
         );
@@ -494,7 +521,14 @@ const makeManager = Effect.gen(function* () {
       const loop = Effect.gen(function* () {
         while (true) {
           const pending = unique.filter(
-            (id) => entries.get(id)?.snapshot.status === "running",
+            (id) => {
+              const entry = entries.get(id);
+              return (
+                entry?.snapshot.status === "running" ||
+                entry?.restarting === true ||
+                entry?.continuationPending === true
+              );
+            },
           );
           if (pending.length === 0) return;
           onPending?.(pending);

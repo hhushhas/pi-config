@@ -322,3 +322,56 @@ test("takeover requestSend reports a rejected restart", async () => {
     assert.equal(manager.view.get(settled.id)?.status, "done");
   });
 });
+
+for (const mode of ["END_STREAM", "CRASH_STREAM"] as const) {
+  test(`${mode} releases queued continuation capacity and delivers failure`, async () => {
+    await withManager(async (manager, runtime) => {
+      const deliveries: Array<{ status: string; error?: string }> = [];
+      manager.view.setOnSettled((snap) => {
+        deliveries.push({ status: snap.status, error: snap.errorText });
+      });
+
+      const first = await runTool(
+        runtime,
+        manager.spawn("claude", task(`${mode}: terminate the event stream`)),
+      );
+      const activityDeadline = Date.now() + 5_000;
+      while (
+        !manager.view.get(first.id)?.liveAssistant?.text &&
+        Date.now() < activityDeadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      assert.ok(manager.view.get(first.id)?.liveAssistant?.text);
+      await runTool(runtime, manager.send(first.id, "Accepted queued work"));
+
+      const failureDeadline = Date.now() + 5_000;
+      while (
+        manager.view.get(first.id)?.errorText !==
+          "Backend ended before queued work could start" &&
+        Date.now() < failureDeadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      assert.equal(
+        manager.view.get(first.id)?.errorText,
+        "Backend ended before queued work could start",
+      );
+      assert.equal(deliveries.at(-1)?.status, "error");
+      assert.equal(
+        deliveries.at(-1)?.error,
+        "Backend ended before queued work could start",
+      );
+
+      const replacements = await runTool(
+        runtime,
+        Effect.forEach(
+          [1, 2, 3, 4],
+          (n) => manager.spawn("codex", task(`Replacement ${n}`)),
+          { concurrency: "unbounded" },
+        ),
+      );
+      assert.equal(replacements.length, 4);
+    });
+  });
+}
