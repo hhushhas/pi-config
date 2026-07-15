@@ -8,14 +8,23 @@ The live configuration is installed at `~/.pi/agent`. Secrets, authentication, s
 
 Pi 0.80.6 defaults to `openai-codex/gpt-5.6-sol` at medium reasoning. Automatic naming uses Luna at minimal reasoning. Codex image generation defaults to Sol at medium reasoning and uses the existing Codex login rather than an OpenAI API key.
 
-The global `AGENTS.md` contains only basic working, research, verification, and safety rules. Delegation is off by instruction unless Hasan explicitly asks for it or invokes `/orchestrate`. Skills remain manually available as `/skill:name`, but `manual-only-skills.ts` removes the ambient skill catalog from the model's system prompt.
+The global `AGENTS.md` contains only basic working, research, verification, and safety rules. Delegation tools are physically absent from the model payload by default, rather than merely disabled by instruction. Skills remain manually available as `/skill:name`, but `manual-only-skills.ts` removes the ambient skill catalog from the model's system prompt.
+
+Delegation capabilities are enabled cumulatively and only for the current session:
+
+- `/enable-subagents` exposes role-based Pi agents, parallel reviews, and ordinary chains. `/disable-subagents` hides them again.
+- `/enable-harnesses` exposes direct Pi, Claude Code, and Codex child processes. `/disable-harnesses` hides them again.
+- `/enable-workflows` exposes durable dependency-aware DAGs. `/disable-workflows` hides them again.
+- `/delegation-status` reports the enabled groups, while `/delegation-off` hides all three.
+
+The selection is stored in session history, survives reload/resume and follows branch navigation. A new session starts with every delegation group off. If multiple groups are intentionally enabled, Pi receives a short routing rule distinguishing role agents, cross-harness children, and durable DAGs. Worker agents use fresh context by default; forked parent history must be requested explicitly.
 
 Two custom prompt templates are intentionally exposed:
 
 - `/debrief [scope]` produces a verified guided walkthrough. It is a prompt template, so it runs only when typed.
 - `/orchestrate <task>` authorizes subagent delegation for that request and supplies the coordination rules.
 
-`/orchestrate` can now create durable dependency-aware workflows through the `workflow` tool. Each node names its prerequisites; ready independent nodes run concurrently, while a dependent node launches only after every prerequisite succeeds. The scheduler caps all workflow activity at four agents globally and accepts a per-workflow limit from one to eight. Each node may override its role, model, reasoning effort, and timeout.
+After `/enable-workflows`, `/orchestrate` can create durable dependency-aware workflows through the `workflow` tool. Each node names its prerequisites; ready independent nodes run concurrently, while a dependent node launches only after every prerequisite succeeds. The scheduler caps all workflow activity at four agents globally and accepts a per-workflow limit from one to eight. Each node may override its role, model, reasoning effort, and timeout.
 
 `/fleet` opens a responsive Pi-native overlay for live agents, recorded attempts, and read-only external evidence. It shows dependencies, lineage, ownership, queue and run state, attention, model and effort, elapsed time, tokens, output speed, cost, turns, tool calls, current activity, and causal terminal reasons. Use the arrow keys to select, `tab` to switch panes, `h` to include terminal workflow history, `u` to resume, `p` to pause, `r` to retry a terminal node, `x` to stop it, and `t` to request an explicitly confirmed dead-owner takeover. Unsafe actions are disabled for legacy, foreign, superseded, stale, and non-authoritative attempts.
 
@@ -36,8 +45,10 @@ The package recipes `/c7-docs`, `/gather-context-and-clarify`, `/parallel-cleanu
 | `prompts/*.md` | `~/.pi/agent/prompts/*.md` | Manual `/debrief` and `/orchestrate` commands |
 | `extensions/manual-only-skills.ts` | `~/.pi/agent/extensions/manual-only-skills.ts` | Prevents automatic skill selection |
 | `extensions/openai-image-generation.ts` | `~/.pi/agent/extensions/openai-image-generation.ts` | Adds `generate_image` through Codex |
-| `extensions/dag-workflows.ts` | Loaded directly as a local Pi package | Adds the workflow tool, recovery prompt, and `/fleet` |
-| `extensions/subagents/*.ts` | Loaded directly as a local Pi package | Adds Pi, Claude Code, and Codex children plus `/subagents` conversation takeover |
+| `extensions/delegation-gate.ts` | Loaded directly as a local Pi package | Keeps delegation schemas out of the model payload until session-scoped slash commands enable them |
+| `extensions/dag-workflows.ts` | Loaded directly as a local Pi package | Adds the gated workflow tool, recovery prompt, and `/fleet` |
+| `extensions/subagents/*.ts` | Loaded directly as a local Pi package | Adds gated Pi, Claude Code, and Codex children plus `/subagents` conversation takeover |
+| `subagent-config.json` | `~/.pi/agent/extensions/subagent/config.json` | Uses the compact role-subagent tool description when that group is enabled |
 | `extensions/ui-dashboard.ts` | Loaded directly as a local Pi package | Adds the responsive footer and session activity tracking |
 | `lib/dashboard/*.ts` | Loaded through the local Pi package | Renders footer segments and tracks active time, compactions, subagents, and workflow progress |
 | `lib/workflows/*.ts` | Loaded through the local Pi package | Validates DAGs, schedules runs, persists state, and renders the fleet UI |
@@ -45,7 +56,7 @@ The package recipes `/c7-docs`, `/gather-context-and-clarify`, `/parallel-cleanu
 
 Installed packages are pinned in `settings.json`:
 
-- Hasan's `hhushhas/pi-subagents` fork is immutably pinned to commit `5cccd64d39a2e6a95ed557bde24dfcac1f17309e`. It supplies the event-driven subagent runtime and workflow RPC protocol v2. Enabled built-ins are `worker`, `scout`, `reviewer`, and `delegate`; `researcher`, `context-builder`, `planner`, and `oracle` are disabled. Roles inherit the selected parent model unless a run overrides it. Their package reasoning defaults are high, low, high, and inherited respectively. The session spawn budget is raised to 256 so 64-node workflows and retries fit within the package guardrail.
+- Hasan's `hhushhas/pi-subagents` fork is immutably pinned to commit `5cccd64d39a2e6a95ed557bde24dfcac1f17309e`. It supplies the event-driven subagent runtime and workflow RPC protocol v2. Role availability is controlled through `subagents.agentOverrides`. Roles inherit the selected parent model unless a run overrides it, and worker defaults to fresh context. Their package reasoning defaults are high, low, high, and inherited respectively. The session spawn budget is raised to 256 so 64-node workflows and retries fit within the package guardrail.
 - `@upstash/context7-pi@0.1.1` supplies current library-documentation tools.
 - `pi-extension-auto-name@0.3.3` names sessions automatically.
 - Ben Davis's `my-pi-setup` is pinned to commit `8feb880c...`; only ask-user, Firecrawl search/scrape, git info, model info, UI customization, and the GitHub Dark Default theme load.

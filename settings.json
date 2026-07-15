@@ -47,7 +47,8 @@
       "extensions": [
         "+extensions/ui-dashboard.ts",
         "+extensions/dag-workflows.ts",
-        "+extensions/subagents/index.ts"
+        "+extensions/subagents/index.ts",
+        "+extensions/delegation-gate.ts"
       ],
       "skills": [],
       "prompts": [],
@@ -57,6 +58,9 @@
   "subagents": {
     "maxSubagentSpawnsPerSession": 256,
     "agentOverrides": {
+      "worker": {
+        "defaultContext": "fresh"
+      },
       "researcher": {
         "disabled": true
       },

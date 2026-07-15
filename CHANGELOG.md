@@ -2,6 +2,8 @@
 
 ## 2026-07-15
 
+- Added session-scoped delegation gates: role subagents, cross-harness agents, and dependency workflows now start hidden and are enabled cumulatively through dedicated slash commands.
+- Changed worker subagents to fresh context by default and configured the main `subagent` tool to use its compact description.
 - Added Ben Davis's full-screen `/subagents` dashboard and conversation takeover, including live transcript rendering, scrolling, steering and follow-up input, status metrics, and abort controls.
 - Added session-local Pi, Claude Code, and Codex subagent backends behind `subagent_spawn`, with automatic event-driven result delivery, exact supported reasoning overrides, and a four-run cap that remains reserved across queued continuations.
 - Takeover follow-ups now report rejected sends in place and retain the user's input for retry.
