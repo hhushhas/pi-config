@@ -151,15 +151,16 @@ function preferredCodexEffort(effort: ReasoningEffort | undefined) {
     case "high":
       return effort;
     case "xhigh":
-    case "max":
       return "xhigh";
+    case "max":
+      return "max";
     case undefined:
       return undefined;
   }
 }
 
 /** Clamp against model/list because, for example, some models use none instead of minimal. */
-function supportedCodexEffort(
+export function supportedCodexEffort(
   effort: ReasoningEffort | undefined,
   modelLabel: string | undefined,
   modelList: JsonRecord | undefined,
@@ -179,7 +180,15 @@ function supportedCodexEffort(
     .filter((value): value is string => value !== undefined);
   if (supported.includes(preferred)) return preferred;
 
-  const scale = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
+  const scale = [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ] as const;
   const target = scale.indexOf(preferred);
   const candidates = supported
     .map((value) => ({

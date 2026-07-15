@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { contextOccupancyTokens } from "./src/backends/claude.ts";
-import { parseThreadTokenUsage } from "./src/backends/codex.ts";
+import {
+  parseThreadTokenUsage,
+  supportedCodexEffort,
+} from "./src/backends/codex.ts";
 
 // --- Claude: per-request occupancy, never the run aggregate ------------------
 
@@ -67,6 +70,23 @@ const codexParams = (tokenUsage: unknown) => ({
   threadId: "t",
   turnId: "u",
   tokenUsage,
+});
+
+test("Codex preserves max effort when the selected model supports it", () => {
+  assert.equal(
+    supportedCodexEffort("max", "gpt-5.6-sol", {
+      data: [
+        {
+          id: "gpt-5.6-sol",
+          supportedReasoningEfforts: [
+            { reasoningEffort: "xhigh" },
+            { reasoningEffort: "max" },
+          ],
+        },
+      ],
+    }),
+    "max",
+  );
 });
 
 test("Codex occupancy uses tokenUsage.last.totalTokens, not the cumulative total", () => {

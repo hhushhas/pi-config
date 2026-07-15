@@ -362,6 +362,8 @@ class TakeoverView implements Component, Focusable {
   private renderTimer?: ReturnType<typeof setTimeout>;
   private ticker: ReturnType<typeof setInterval>;
   private closed = false;
+  private sendPending = false;
+  private sendError?: string;
 
   private _focused = false;
   get focused(): boolean {
@@ -391,11 +393,29 @@ class TakeoverView implements Component, Focusable {
     this.ticker = setInterval(() => this.tui.requestRender(), 1000);
     this.input.onSubmit = (value: string) => {
       const text = value.trim();
-      if (!text) return;
-      this.input.setValue("");
-      this.view.requestSend(this.id, text);
-      this.scrollOffset = 0;
+      if (!text || this.sendPending) return;
+      this.sendPending = true;
+      this.sendError = undefined;
       this.tui.requestRender();
+      void this.view.requestSend(this.id, text).then(
+        () => {
+          if (this.closed) return;
+          this.input.setValue("");
+          this.sendPending = false;
+          this.scrollOffset = 0;
+          this.tui.requestRender();
+        },
+        (error: unknown) => {
+          if (this.closed) return;
+          this.sendPending = false;
+          this.sendError = (
+            error instanceof Error ? error.message : String(error)
+          ).slice(0, 4096);
+          // Keep the editor value intact so a rejected follow-up can be
+          // retried instead of silently disappearing.
+          this.tui.requestRender();
+        },
+      );
     };
   }
 
@@ -470,7 +490,12 @@ class TakeoverView implements Component, Focusable {
       this.tui.requestRender();
       return;
     }
-    this.input.handleInput(data);
+    // Do not mutate the submitted text while acceptance is pending; success
+    // clears that exact input and failure leaves it available for retry.
+    if (!this.sendPending) {
+      this.sendError = undefined;
+      this.input.handleInput(data);
+    }
     this.tui.requestRender();
   }
 
@@ -510,8 +535,12 @@ class TakeoverView implements Component, Focusable {
     const transcript = buildTranscriptLines(snap, width, theme);
     const viewport = this.viewportHeight();
     const errorRows = snap.errorText ? 1 : 0;
+    const sendRows = this.sendPending || this.sendError ? 1 : 0;
     const scrollRows = this.scrollOffset > 0 ? 1 : 0;
-    const transcriptCapacity = Math.max(1, viewport - errorRows - scrollRows);
+    const transcriptCapacity = Math.max(
+      1,
+      viewport - errorRows - sendRows - scrollRows,
+    );
     const maxOffset = Math.max(0, transcript.length - transcriptCapacity);
     if (this.scrollOffset > maxOffset) this.scrollOffset = maxOffset;
 
@@ -524,7 +553,10 @@ class TakeoverView implements Component, Focusable {
 
     const capacity = Math.max(
       1,
-      viewport - body.length - (this.scrollOffset > 0 ? 1 : 0),
+      viewport -
+        body.length -
+        (this.scrollOffset > 0 ? 1 : 0) -
+        (sendRows > 0 ? 1 : 0),
     );
     const end = transcript.length - this.scrollOffset;
     const visible = transcript.slice(Math.max(0, end - capacity), end);
@@ -535,6 +567,16 @@ class TakeoverView implements Component, Focusable {
       body.push(
         truncateToWidth(
           theme.fg("dim", `... ${this.scrollOffset} lines below · ↓/pgdn`),
+          width,
+        ),
+      );
+    }
+    if (this.sendPending) {
+      body.push(theme.fg("warning", "sending follow-up..."));
+    } else if (this.sendError) {
+      body.push(
+        truncateToWidth(
+          theme.fg("error", `send failed: ${this.sendError}`),
           width,
         ),
       );

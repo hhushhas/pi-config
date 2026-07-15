@@ -214,3 +214,111 @@ test("send steers an idle subagent into another turn", async () => {
     assert.match(afterSecond?.finalText ?? "", /Second turn/);
   });
 });
+
+test("queued backend continuations retain their concurrency slot", async () => {
+  await withManager(async (manager, runtime) => {
+    const first = await runTool(
+      runtime,
+      manager.spawn("claude", task("First turn with a queued continuation")),
+    );
+
+    const activityDeadline = Date.now() + 5_000;
+    while (
+      !manager.view.get(first.id)?.liveAssistant?.text &&
+      Date.now() < activityDeadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.ok(manager.view.get(first.id)?.liveAssistant?.text);
+    await runTool(runtime, manager.send(first.id, "Queued second turn"));
+
+    const queueDeadline = Date.now() + 2_000;
+    while (
+      manager.view.get(first.id)?.queued.length === 0 &&
+      Date.now() < queueDeadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(manager.view.get(first.id)?.queued.length, 1);
+
+    let extraSpawn: Promise<{ error?: unknown }> | undefined;
+    manager.view.setOnSettled((snap) => {
+      if (snap.id === first.id && !extraSpawn) {
+        extraSpawn = runTool(
+          runtime,
+          manager.spawn("claude", task("Must not become a fifth run")),
+        ).then(
+          () => ({}),
+          (error: unknown) => ({ error }),
+        );
+      }
+    });
+
+    let maxVisibleRunning = 0;
+    const recordRunning = () => {
+      maxVisibleRunning = Math.max(
+        maxVisibleRunning,
+        manager.view.list().filter((snap) => snap.status === "running").length,
+      );
+    };
+    const unsubscribe = manager.view.subscribe(recordRunning);
+    try {
+      await runTool(
+        runtime,
+        Effect.forEach(
+          [1, 2, 3],
+          (n) => manager.spawn("claude", task(`Concurrent peer ${n}`)),
+          { concurrency: "unbounded" },
+        ),
+      );
+      recordRunning();
+
+      const settleDeadline = Date.now() + 5_000;
+      while (!extraSpawn && Date.now() < settleDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      assert.ok(extraSpawn);
+      const blocked = await extraSpawn;
+      assert.match(String(blocked.error), /Max 4 subagents/);
+      assert.ok(maxVisibleRunning <= 4);
+
+      const continuationDeadline = Date.now() + 8_000;
+      while (
+        !manager.view.get(first.id)?.finalText.includes("Queued second turn") &&
+        Date.now() < continuationDeadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      assert.match(
+        manager.view.get(first.id)?.finalText ?? "",
+        /Queued second turn/,
+      );
+    } finally {
+      unsubscribe();
+    }
+  });
+});
+
+test("takeover requestSend reports a rejected restart", async () => {
+  await withManager(async (manager, runtime) => {
+    const settled = await runTool(
+      runtime,
+      manager.spawn("claude", task("Settle before takeover retry")),
+    );
+    await runTool(runtime, manager.waitFor([settled.id]));
+    await runTool(
+      runtime,
+      Effect.forEach(
+        [1, 2, 3, 4],
+        (n) => manager.spawn("codex", task(`Occupied slot ${n}`)),
+        { concurrency: "unbounded" },
+      ),
+    );
+
+    await assert.rejects(
+      manager.view.requestSend(settled.id, "Keep this input for retry"),
+      /Max 4 subagents/,
+    );
+    assert.equal(manager.view.get(settled.id)?.status, "done");
+  });
+});

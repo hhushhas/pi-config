@@ -82,6 +82,10 @@ interface Entry {
   /** Idle restart dispatched but RunStarted not folded yet; counts as running
    * so concurrent restarts cannot race past the cap. */
   restarting?: boolean;
+  /** The backend has accepted queued work and will start another run after
+   * the current settlement. This keeps the same concurrency slot occupied
+   * across the brief RunSettled -> RunStarted transition. */
+  continuationPending?: boolean;
 }
 
 // --- Read model ----------------------------------------------------------------
@@ -95,8 +99,8 @@ export interface SubagentReadModel {
   subscribe(listener: () => void): () => void;
   /** Per-subagent notification (takeover view). */
   subscribeTo(id: string, listener: () => void): () => void;
-  /** Fire-and-forget: steer/continue a subagent (takeover input). */
-  requestSend(id: string, text: string): void;
+  /** Steer/continue a subagent, rejecting when the input was not accepted. */
+  requestSend(id: string, text: string): Promise<void>;
   /** Fire-and-forget: abort a running subagent (dashboard `x`, takeover). */
   requestAbort(id: string): void;
   /**
@@ -159,6 +163,7 @@ const makeManager = Effect.gen(function* () {
   // Detached forker for sync contexts (read-model commands, pruning) that
   // preserves the manager's services instead of using the global runtime.
   const runDetached = Effect.runForkWith(yield* Effect.context());
+  const runPromise = Effect.runPromiseWith(yield* Effect.context());
 
   const entries = new Map<string, Entry>();
   const waitInterest = new Map<string, number>();
@@ -208,7 +213,10 @@ const makeManager = Effect.gen(function* () {
 
   const runningCount = () =>
     [...entries.values()].filter(
-      (e) => e.snapshot.status === "running" || e.restarting === true,
+      (e) =>
+        e.snapshot.status === "running" ||
+        e.restarting === true ||
+        e.continuationPending === true,
     ).length;
 
   const addInterest = (ids: ReadonlyArray<string>) => {
@@ -250,6 +258,10 @@ const makeManager = Effect.gen(function* () {
     const s = entry.snapshot;
     entry.restarting = false;
     if (s.status !== "running") return;
+    // Backends own queued follow-up dispatch. Preserve this entry's slot
+    // until their next RunStarted arrives so another spawn cannot race into
+    // the gap and push the fleet above MAX_RUNNING.
+    entry.continuationPending = s.queued.length > 0;
     s.settledAt = Date.now();
     switch (outcome._tag) {
       case "Completed":
@@ -272,7 +284,7 @@ const makeManager = Effect.gen(function* () {
     s.liveAssistant = undefined;
     entry.liveToolMap.clear();
     s.liveTools = [];
-    s.queued = [];
+    if (!entry.continuationPending) s.queued = [];
     const consumed = (waitInterest.get(s.id) ?? 0) > 0;
     notify(s.id);
     try {
@@ -289,6 +301,7 @@ const makeManager = Effect.gen(function* () {
     switch (event._tag) {
       case "RunStarted":
         entry.restarting = false;
+        entry.continuationPending = false;
         s.status = "running";
         s.settledAt = undefined;
         s.errorText = undefined;
@@ -445,6 +458,12 @@ const makeManager = Effect.gen(function* () {
                   _tag: "Failed",
                   errorText: "Backend event stream ended unexpectedly",
                 });
+              } else if (entry.continuationPending) {
+                entry.continuationPending = false;
+                entry.snapshot.queued = [];
+                entry.snapshot.errorText =
+                  "Backend ended before queued work could start";
+                notify(entry.snapshot.id);
               }
             }),
           ),
@@ -572,7 +591,13 @@ const makeManager = Effect.gen(function* () {
       // must respect the same cap as spawn. Steering an already-running one
       // does not consume additional capacity.
       if (entry.snapshot.status !== "running") {
-        if (runningCount() + reserved >= MAX_RUNNING) {
+        // A backend-owned queued continuation already reserves this entry's
+        // slot. Additional input joins that same session and consumes no new
+        // capacity; a genuinely idle restart must reserve a fresh slot.
+        if (
+          !entry.continuationPending &&
+          runningCount() + reserved >= MAX_RUNNING
+        ) {
           return new SendError({
             message: `Max ${MAX_RUNNING} subagents can run concurrently; restarting "${id}" would exceed that.`,
           });
@@ -581,7 +606,7 @@ const makeManager = Effect.gen(function* () {
         // arrives via the async pump, and two concurrent restarts must not
         // both pass the check in that window. Cleared by RunStarted/settle,
         // or here when the backend rejects the send.
-        entry.restarting = true;
+        if (!entry.continuationPending) entry.restarting = true;
         return entry.session.send(text).pipe(
           Effect.onError(() =>
             Effect.sync(() => {
@@ -637,9 +662,7 @@ const makeManager = Effect.gen(function* () {
         if (set.size === 0) idListeners.delete(id);
       };
     },
-    requestSend: (id, text) => {
-      runDetached(send(id, text).pipe(Effect.ignore));
-    },
+    requestSend: (id, text) => runPromise(send(id, text)),
     requestAbort: (id) => {
       const entry = entries.get(id);
       if (!entry) return;

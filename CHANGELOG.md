@@ -3,7 +3,8 @@
 ## 2026-07-15
 
 - Added Ben Davis's full-screen `/subagents` dashboard and conversation takeover, including live transcript rendering, scrolling, steering and follow-up input, status metrics, and abort controls.
-- Added session-local Pi, Claude Code, and Codex subagent backends behind `subagent_spawn`, with automatic event-driven result delivery and per-run model and reasoning overrides.
+- Added session-local Pi, Claude Code, and Codex subagent backends behind `subagent_spawn`, with automatic event-driven result delivery, exact supported reasoning overrides, and a four-run cap that remains reserved across queued continuations.
+- Takeover follow-ups now report rejected sends in place and retain the user's input for retry.
 - Kept direct multi-harness children separate from durable `/fleet` workflows so the new in-memory registry cannot bypass DAG dependency, ownership, recovery, or authority guarantees.
 - Pinned and documented the multi-harness dependencies, added focused and credential-backed live tests, updated the active Pi package configuration, and verified the Codex takeover flow in a fresh interactive Pi session.
 
