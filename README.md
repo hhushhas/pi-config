@@ -19,6 +19,8 @@ Delegation capabilities are enabled cumulatively and only for the current sessio
 
 The selection is stored in session history, survives reload/resume and follows branch navigation. A new session starts with every delegation group off. If multiple groups are intentionally enabled, Pi receives a short routing rule distinguishing role agents, cross-harness children, and durable DAGs. Worker agents use fresh context by default; forked parent history must be requested explicitly.
 
+The `ask_user` option picker accepts an immediate choice with Enter, or Tab/`n` opens a note editor for the highlighted supplied option. Escape returns from note entry to the same option, while “Write my own answer” continues to provide a standalone free-form response.
+
 Two custom prompt templates are intentionally exposed:
 
 - `/debrief [scope]` produces a verified guided walkthrough. It is a prompt template, so it runs only when typed.
@@ -45,6 +47,7 @@ The package recipes `/c7-docs`, `/gather-context-and-clarify`, `/parallel-cleanu
 | `prompts/*.md` | `~/.pi/agent/prompts/*.md` | Manual `/debrief` and `/orchestrate` commands |
 | `extensions/manual-only-skills.ts` | `~/.pi/agent/extensions/manual-only-skills.ts` | Prevents automatic skill selection |
 | `extensions/openai-image-generation.ts` | `~/.pi/agent/extensions/openai-image-generation.ts` | Adds `generate_image` through Codex |
+| `extensions/ask-user/*.ts` | Loaded directly as a local Pi package | Adds the durable option picker with per-option notes and a free-form fallback |
 | `extensions/delegation-gate.ts` | Loaded directly as a local Pi package | Keeps delegation schemas out of the model payload until session-scoped slash commands enable them |
 | `extensions/dag-workflows.ts` | Loaded directly as a local Pi package | Adds the gated workflow tool, recovery prompt, and `/fleet` |
 | `extensions/subagents/*.ts` | Loaded directly as a local Pi package | Adds gated Pi, Claude Code, and Codex children plus `/subagents` conversation takeover |
@@ -59,8 +62,8 @@ Installed packages are pinned in `settings.json`:
 - Hasan's `hhushhas/pi-subagents` fork is immutably pinned to commit `5cccd64d39a2e6a95ed557bde24dfcac1f17309e`. It supplies the event-driven subagent runtime and workflow RPC protocol v2. Role availability is controlled through `subagents.agentOverrides`. Roles inherit the selected parent model unless a run overrides it, and worker defaults to fresh context. Their package reasoning defaults are high, low, high, and inherited respectively. The session spawn budget is raised to 256 so 64-node workflows and retries fit within the package guardrail.
 - `@upstash/context7-pi@0.1.1` supplies current library-documentation tools.
 - `pi-extension-auto-name@0.3.3` names sessions automatically.
-- Ben Davis's `my-pi-setup` is pinned to commit `8feb880c...`; only ask-user, Firecrawl search/scrape, git info, model info, UI customization, and the GitHub Dark Default theme load.
-- This repository is loaded as a local Pi package for the dashboard, DAG scheduler, durable Fleet, and the multi-harness `/subagents` UI derived from Ben Davis's `f992ae6` implementation. Its runtime and TUI dependencies are pinned in `package.json` and installed with pnpm. The exact `effect@4.0.0-beta.97` pin is narrowly excluded from pnpm's provenance-downgrade policy in `pnpm-workspace.yaml`; the broader maturity and trust policies remain enabled.
+- Ben Davis's `my-pi-setup` is pinned to commit `8feb880c...`; only Firecrawl search/scrape, git info, model info, UI customization, and the GitHub Dark Default theme load.
+- This repository is loaded as a local Pi package for `ask_user`, the dashboard, DAG scheduler, durable Fleet, and the multi-harness `/subagents` UI derived from Ben Davis's `f992ae6` implementation. Its runtime and TUI dependencies are pinned in `package.json` and installed with pnpm. The exact `effect@4.0.0-beta.97` pin is narrowly excluded from pnpm's provenance-downgrade policy in `pnpm-workspace.yaml`; the broader maturity and trust policies remain enabled.
 
 ## Workflow state and recovery
 

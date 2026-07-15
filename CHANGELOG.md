@@ -2,6 +2,7 @@
 
 ## 2026-07-15
 
+- Vendored `ask_user` into the durable local package and added Tab/`n` per-option notes while preserving immediate Enter selection, Escape restoration, the free-form fallback, structured result details, and the public tool schema.
 - Added session-scoped delegation gates: role subagents, cross-harness agents, and dependency workflows now start hidden and are enabled cumulatively through dedicated slash commands.
 - Changed worker subagents to fresh context by default and configured the main `subagent` tool to use its compact description.
 - Added Ben Davis's full-screen `/subagents` dashboard and conversation takeover, including live transcript rendering, scrolling, steering and follow-up input, status metrics, and abort controls.

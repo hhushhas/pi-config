@@ -30,7 +30,6 @@
       "source": "git:github.com/davis7dotsh/my-pi-setup@8feb880c9275faaaccb9e4a00ec1ea800cfbfc9f",
       "extensions": [
         "!extensions/**",
-        "+extensions/ask-user/index.ts",
         "+extensions/firecrawl-search/index.ts",
         "+extensions/git-info/index.ts",
         "+extensions/model-info/index.ts",
@@ -45,6 +44,7 @@
     {
       "source": "/Users/macmini/code/pi-config",
       "extensions": [
+        "+extensions/ask-user/index.ts",
         "+extensions/ui-dashboard.ts",
         "+extensions/dag-workflows.ts",
         "+extensions/subagents/index.ts",

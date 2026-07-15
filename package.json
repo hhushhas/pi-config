@@ -5,6 +5,7 @@
   "keywords": ["pi-package"],
   "pi": {
     "extensions": [
+      "extensions/ask-user/index.ts",
       "extensions/ui-dashboard.ts",
       "extensions/dag-workflows.ts",
       "extensions/subagents/index.ts",
@@ -13,7 +14,7 @@
   },
   "scripts": {
     "test": "pnpm run test:core && pnpm run test:subagents",
-    "test:core": "tsx --test lib/**/*.test.ts extensions/delegation-gate.test.ts",
+    "test:core": "tsx --test lib/**/*.test.ts extensions/delegation-gate.test.ts extensions/ask-user/ask-user.test.ts",
     "test:subagents": "tsx --test extensions/subagents/manager.test.ts extensions/subagents/result-delivery.test.ts extensions/subagents/context-usage.test.ts extensions/subagents/takeover.test.ts",
     "test:subagents:live": "tsx --test extensions/subagents/claude.test.ts extensions/subagents/codex.test.ts",
     "typecheck": "tsc --noEmit"
