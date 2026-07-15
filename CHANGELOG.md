@@ -2,6 +2,7 @@
 
 ## 2026-07-15
 
+- Added the official Grok Build CLI as a fourth direct subagent harness over ACP, reusing the signed-in X subscription with model, reasoning, streaming transcript, tool activity, usage, continuation, and cancellation support.
 - Stopped unrelated or merely long-running subagent control events from leaving the footer stuck on `workflow attention`; only `needs_attention` from an authoritative workflow child now sets it.
 - Removed the three-minute Pi-child tool-call timeout so role and cross-harness children run without completion budgets by default, and documented that default directly in both delegation tool descriptions.
 - Vendored `ask_user` into the durable local package and added Tab/`n` per-option notes while preserving immediate Enter selection, Escape restoration, the free-form fallback, structured result details, and the public tool schema.

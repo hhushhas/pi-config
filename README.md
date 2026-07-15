@@ -13,7 +13,7 @@ The global `AGENTS.md` contains only basic working, research, verification, and 
 Delegation capabilities are enabled cumulatively and only for the current session:
 
 - `/enable-subagents` exposes role-based Pi agents, parallel reviews, and ordinary chains. `/disable-subagents` hides them again.
-- `/enable-harnesses` exposes direct Pi, Claude Code, and Codex child processes. `/disable-harnesses` hides them again.
+- `/enable-harnesses` exposes direct Pi, Claude Code, Codex, and Grok Build child processes. `/disable-harnesses` hides them again.
 - `/enable-workflows` exposes durable dependency-aware DAGs. `/disable-workflows` hides them again.
 - `/delegation-status` reports the enabled groups, while `/delegation-off` hides all three.
 
@@ -30,9 +30,9 @@ After `/enable-workflows`, `/orchestrate` can create durable dependency-aware wo
 
 `/fleet` opens a responsive Pi-native overlay for live agents, recorded attempts, and read-only external evidence. It shows dependencies, lineage, ownership, queue and run state, attention, model and effort, elapsed time, tokens, output speed, cost, turns, tool calls, current activity, and causal terminal reasons. Use the arrow keys to select, `tab` to switch panes, `h` to include terminal workflow history, `u` to resume, `p` to pause, `r` to retry a terminal node, `x` to stop it, and `t` to request an explicitly confirmed dead-owner takeover. Unsafe actions are disabled for legacy, foreign, superseded, stale, and non-authoritative attempts.
 
-`/subagents` is the session-local multi-harness fleet for direct delegation. The `subagent_spawn` tool can launch isolated Pi, Claude Code, or Codex children with per-run model and reasoning overrides; four may run concurrently. Results return automatically without forcing the parent to wait. The full-screen dashboard shows backend, model, context utilization, elapsed time, and lifecycle. Enter opens a live conversation view with assistant reasoning, tool activity, queued messages, scrolling, steering or follow-up input, and abort controls; Escape returns to the same fleet selection.
+`/subagents` is the session-local multi-harness fleet for direct delegation. The `subagent_spawn` tool can launch isolated Pi, Claude Code, Codex, or official Grok Build children with per-run model and reasoning overrides; four may run concurrently. Grok children use `grok agent stdio` over ACP and reuse the local Grok Build subscription login rather than xAI API billing. Results return automatically without forcing the parent to wait. The full-screen dashboard shows backend, model, context utilization, elapsed time, and lifecycle. Enter opens a live conversation view with assistant reasoning, tool activity, queued messages, scrolling, steering or follow-up input, and abort controls; Escape returns to the same fleet selection.
 
-The two fleet surfaces have different guarantees. `/fleet` is durable and dependency-aware. `/subagents` provides richer direct interaction but keeps its registry in the parent session's memory; native child session files remain on disk, while dashboard entries are not reloaded after the parent shuts down. Direct Claude and Codex children run under the local coding agents' unrestricted permission modes, so prompts must carry the same repository and production-safety boundaries as the parent.
+The two fleet surfaces have different guarantees. `/fleet` is durable and dependency-aware. `/subagents` provides richer direct interaction but keeps its registry in the parent session's memory; native child session files remain on disk, while dashboard entries are not reloaded after the parent shuts down. Direct Claude, Codex, and Grok children run under the local coding agents' unrestricted permission modes, so prompts must carry the same repository and production-safety boundaries as the parent.
 
 The custom footer groups related information instead of flattening it into one status string. Directory, context usage, cost, and speed stay on the left; model/effort and Git state stay on the right. A separate activity row shows accumulated non-idle working time and compaction count on the left, then conditionally shows live subagents and active workflow progress on the right. Active time is wall-clock time during which the parent or one of its owned children is running, so user idle time is excluded and parallel children do not multiply the total. Checkpoints live outside Git under `~/.pi/agent/dashboard-session-metrics/` so the count survives reloads.
 
@@ -50,7 +50,7 @@ The package recipes `/c7-docs`, `/gather-context-and-clarify`, `/parallel-cleanu
 | `extensions/ask-user/*.ts` | Loaded directly as a local Pi package | Adds the durable option picker with per-option notes and a free-form fallback |
 | `extensions/delegation-gate.ts` | Loaded directly as a local Pi package | Keeps delegation schemas out of the model payload until session-scoped slash commands enable them |
 | `extensions/dag-workflows.ts` | Loaded directly as a local Pi package | Adds the gated workflow tool, recovery prompt, and `/fleet` |
-| `extensions/subagents/*.ts` | Loaded directly as a local Pi package | Adds gated Pi, Claude Code, and Codex children plus `/subagents` conversation takeover |
+| `extensions/subagents/*.ts` | Loaded directly as a local Pi package | Adds gated Pi, Claude Code, Codex, and Grok Build children plus `/subagents` conversation takeover |
 | `subagent-config.json` | `~/.pi/agent/extensions/subagent/config.json` | Uses the concise custom role-subagent tool description when that group is enabled |
 | `subagent-tool-description.md` | `~/.pi/agent/subagent-tool-description.md` | States the no-budget default and requires explicit user approval before adding completion limits |
 | `extensions/ui-dashboard.ts` | Loaded directly as a local Pi package | Adds the responsive footer and session activity tracking |

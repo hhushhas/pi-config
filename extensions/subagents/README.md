@@ -4,6 +4,8 @@ This extension is derived from Ben Davis's `davis7dotsh/my-pi-setup` subagent im
 
 The production source is unchanged except for using `effect@4.0.0-beta.97`, the mature API-compatible predecessor to upstream's two-day-old beta 98 pin. The focused manager/UI suite and live Claude Code/Codex backend suite verify that substitution.
 
+The available harnesses are Pi, Claude Code, Codex, and the official Grok Build CLI. Grok runs through `grok agent stdio` over ACP, reuses the local `grok login` subscription session, and supports per-run model and reasoning-effort selection without an xAI API key.
+
 This runtime is deliberately separate from the durable DAG scheduler:
 
 - `/subagents` manages session-local Pi, Claude Code, and Codex children and provides the full-screen dashboard and interactive conversation takeover.
