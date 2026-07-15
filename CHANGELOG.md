@@ -2,6 +2,7 @@
 
 ## 2026-07-15
 
+- Stopped unrelated or merely long-running subagent control events from leaving the footer stuck on `workflow attention`; only `needs_attention` from an authoritative workflow child now sets it.
 - Removed the three-minute Pi-child tool-call timeout so role and cross-harness children run without completion budgets by default, and documented that default directly in both delegation tool descriptions.
 - Vendored `ask_user` into the durable local package and added Tab/`n` per-option notes while preserving immediate Enter selection, Escape restoration, the free-form fallback, structured result details, and the public tool schema.
 - Added session-scoped delegation gates: role subagents, cross-harness agents, and dependency workflows now start hidden and are enabled cumulatively through dedicated slash commands.

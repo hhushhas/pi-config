@@ -7,6 +7,7 @@ import { WorkflowScheduler } from "../lib/workflows/scheduler.ts";
 import { WorkflowStore } from "../lib/workflows/store.ts";
 import { inspectProjection, listProjection, statusProjection } from "../lib/workflows/projection.ts";
 import { WORKFLOW_INFO_CHANNEL } from "../lib/dashboard/state.ts";
+import { currentAttempt } from "../lib/workflows/model.ts";
 
 const ThinkingSchema = Type.Union([
   Type.Literal("off"),
@@ -111,7 +112,14 @@ export default function (pi: ExtensionAPI) {
       );
       unsubscribers = [
         pi.events.on("subagent:async-complete", (value) => scheduler?.handleCompletion(value)),
-        pi.events.on("subagent:control-event", () => ctx.ui.setStatus("dag-workflows", "workflow attention")),
+        pi.events.on("subagent:control-event", (value) => {
+          const event = (value as { event?: { type?: string; runId?: string } } | undefined)?.event;
+          if (event?.type !== "needs_attention" || !event.runId) return;
+          const belongsToWorkflow = scheduler?.snapshot().some((workflow) =>
+            Object.values(workflow.nodes).some((node) => currentAttempt(node)?.packageRunId === event.runId),
+          );
+          if (belongsToWorkflow) ctx.ui.setStatus("dag-workflows", "workflow attention");
+        }),
       ];
       await scheduler.initialize();
 
