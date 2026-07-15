@@ -2,6 +2,9 @@
 
 ## 2026-07-15
 
+- Vendored and adapted Ben Davis's background-terminal implementation at `d8534d7e6ec6609b7e684a8a0eb2e7a0195115ba`, including backpressured private full-output spills, bounded model-visible tails, exactly-once completion delivery, launched-process-group termination, `/ps`, and session-shutdown cleanup.
+- Added enabled-by-default, session-persistent `/enable-bg-terminal` and `/disable-bg-terminal` capability controls plus `/stop` for authoritative all-terminal settlement without duplicate completion messages.
+- Added a 180-second omitted-only default to Pi's foreground Bash calls in parent and Pi-backed child sessions, preserving explicit timeouts and Pi's normal cleanup while directing intentionally long work to unbounded `bg_start` processes.
 - Added the official Grok Build CLI as a fourth direct subagent harness over ACP, reusing the signed-in X subscription with model, reasoning, streaming transcript, tool activity, usage, continuation, and cancellation support.
 - Stopped unrelated or merely long-running subagent control events from leaving the footer stuck on `workflow attention`; only `needs_attention` from an authoritative workflow child now sets it.
 - Removed the three-minute Pi-child tool-call timeout so role and cross-harness children run without completion budgets by default, and documented that default directly in both delegation tool descriptions.

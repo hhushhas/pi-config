@@ -48,6 +48,8 @@
         "+extensions/ui-dashboard.ts",
         "+extensions/dag-workflows.ts",
         "+extensions/subagents/index.ts",
+        "+extensions/foreground-bash-policy.ts",
+        "+extensions/background-terminals/index.ts",
         "+extensions/delegation-gate.ts"
       ],
       "skills": [],
@@ -59,7 +61,21 @@
     "maxSubagentSpawnsPerSession": 256,
     "agentOverrides": {
       "worker": {
-        "defaultContext": "fresh"
+        "defaultContext": "fresh",
+        "tools": [
+          "read",
+          "grep",
+          "find",
+          "ls",
+          "bash",
+          "edit",
+          "write",
+          "contact_supervisor",
+          "bg_start",
+          "bg_status",
+          "bg_list",
+          "bg_kill"
+        ]
       },
       "researcher": {
         "disabled": true

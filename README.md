@@ -19,6 +19,10 @@ Delegation capabilities are enabled cumulatively and only for the current sessio
 
 The selection is stored in session history, survives reload/resume and follows branch navigation. A new session starts with every delegation group off. If multiple groups are intentionally enabled, Pi receives a short routing rule distinguishing role agents, cross-harness children, and durable DAGs. Worker agents use fresh context by default; forked parent history must be requested explicitly. Role and cross-harness children have no turn, token, tool-call-count, or total-runtime budget by default and run until completion or explicit interruption.
 
+Background terminals are a separate session capability and start enabled. `bg_start` launches a non-interactive, no-timeout process for servers, watchers, long builds, long test suites, and commands expected to approach or exceed three minutes; `bg_status`, `bg_list`, and `bg_kill` inspect or terminate only tracked processes. Full stdout and stderr spill to private files while model-facing results keep bounded tails. `/ps` provides live inspection and individual termination, while `/stop` terminates every running tracked terminal and waits for settlement. `/disable-bg-terminal` hides all four tool schemas and their prompt guidance without stopping existing processes; `/enable-bg-terminal` restores them. The latest choice survives reload/resume and follows branch navigation, while new parent sessions default to enabled. On POSIX, Pi owns and terminates the launched process group; Windows uses `taskkill /T`. A `bg_start` command must not daemonize, call `setsid()`, or otherwise detach into a new session, because detached processes leave Pi's ownership and cannot be managed by `bg_kill`, `/stop`, or session teardown.
+
+Ordinary `bash` remains Pi's blocking foreground shell. Calls without an explicit timeout receive a 180-second default; explicit values win, and a timeout uses Pi's normal cleanup before suggesting `bg_start` for intentionally long work. This policy also loads in Pi-backed child sessions that expose normal Bash, but it does not claim control over Claude Code or Codex harness internals. It adds no turn, token, tool-call-count, subagent-runtime, workflow-runtime, or background-process budget.
+
 The `ask_user` option picker accepts an immediate choice with Enter, or Tab/`n` opens a note editor for the highlighted supplied option. Escape returns from note entry to the same option, while “Write my own answer” continues to provide a standalone free-form response.
 
 Two custom prompt templates are intentionally exposed:
@@ -49,6 +53,8 @@ The package recipes `/c7-docs`, `/gather-context-and-clarify`, `/parallel-cleanu
 | `extensions/openai-image-generation.ts` | `~/.pi/agent/extensions/openai-image-generation.ts` | Adds `generate_image` through Codex |
 | `extensions/ask-user/*.ts` | Loaded directly as a local Pi package | Adds the durable option picker with per-option notes and a free-form fallback |
 | `extensions/delegation-gate.ts` | Loaded directly as a local Pi package | Keeps delegation schemas out of the model payload until session-scoped slash commands enable them |
+| `extensions/foreground-bash-policy.ts` | Loaded directly as a local Pi package | Adds the omitted-only 180-second foreground Bash default and timeout retry hint |
+| `extensions/background-terminals/*` | Loaded directly as a local Pi package | Adds session-gated background shells, output capture, launched-process-group cleanup, `/ps`, and `/stop` |
 | `extensions/dag-workflows.ts` | Loaded directly as a local Pi package | Adds the gated workflow tool, recovery prompt, and `/fleet` |
 | `extensions/subagents/*.ts` | Loaded directly as a local Pi package | Adds gated Pi, Claude Code, Codex, and Grok Build children plus `/subagents` conversation takeover |
 | `subagent-config.json` | `~/.pi/agent/extensions/subagent/config.json` | Uses the concise custom role-subagent tool description when that group is enabled |
@@ -64,7 +70,7 @@ Installed packages are pinned in `settings.json`:
 - `@upstash/context7-pi@0.1.1` supplies current library-documentation tools.
 - `pi-extension-auto-name@0.3.3` names sessions automatically.
 - Ben Davis's `my-pi-setup` is pinned to commit `8feb880c...`; only Firecrawl search/scrape, git info, model info, UI customization, and the GitHub Dark Default theme load.
-- This repository is loaded as a local Pi package for `ask_user`, the dashboard, DAG scheduler, durable Fleet, and the multi-harness `/subagents` UI derived from Ben Davis's `f992ae6` implementation. Its runtime and TUI dependencies are pinned in `package.json` and installed with pnpm. The exact `effect@4.0.0-beta.97` pin is narrowly excluded from pnpm's provenance-downgrade policy in `pnpm-workspace.yaml`; the broader maturity and trust policies remain enabled.
+- This repository is loaded as a local Pi package for `ask_user`, the foreground Bash policy, background terminals, the dashboard, DAG scheduler, durable Fleet, and the multi-harness `/subagents` UI. The background-terminal implementation is reviewed and adapted from Ben Davis's `d8534d7e6ec6609b7e684a8a0eb2e7a0195115ba` source without advancing the separately pinned `my-pi-setup` package; the `/subagents` UI derives from his `f992ae6` implementation. Runtime and TUI dependencies are pinned in `package.json` and installed with pnpm. The exact `effect@4.0.0-beta.97` pin is narrowly excluded from pnpm's provenance-downgrade policy in `pnpm-workspace.yaml`; the broader maturity and trust policies remain enabled.
 
 ## Workflow state and recovery
 
@@ -109,4 +115,4 @@ When changing the setup:
 
 The installed auto-name package has a local wording adjustment that favors English titles. A package update may overwrite that cache-level patch; replace it with a tracked local extension if naming regresses. Pi's overlay API is still experimental, so keep the pinned Pi version until `/fleet` has been retested against an upgrade. The local package source is an absolute machine path and must be changed if the repository moves.
 
-TTFB is intentionally displayed as unavailable until the child runtime emits a trustworthy first-token timestamp. Token, cost, turn, tool, activity, and terminal metrics are available now; this release does not infer TTFB from process startup or status-write times.
+TTFB is intentionally displayed as unavailable until the child runtime emits a trustworthy first-token timestamp. Token, cost, turn, tool, activity, and terminal metrics are available now; this release does not infer TTFB from process startup or status-write times. Background terminals are deliberately non-interactive, limited to eight concurrent and 32 tracked entries per session, and have no runtime deadline; start interactive or quick commands with foreground `bash` instead.
