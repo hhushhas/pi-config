@@ -17,7 +17,7 @@ Delegation capabilities are enabled cumulatively and only for the current sessio
 - `/enable-workflows` exposes durable dependency-aware DAGs. `/disable-workflows` hides them again.
 - `/delegation-status` reports the enabled groups, while `/delegation-off` hides all three.
 
-The selection is stored in session history, survives reload/resume and follows branch navigation. A new session starts with every delegation group off. If multiple groups are intentionally enabled, Pi receives a short routing rule distinguishing role agents, cross-harness children, and durable DAGs. Worker agents use fresh context by default; forked parent history must be requested explicitly.
+The selection is stored in session history, survives reload/resume and follows branch navigation. A new session starts with every delegation group off. If multiple groups are intentionally enabled, Pi receives a short routing rule distinguishing role agents, cross-harness children, and durable DAGs. Worker agents use fresh context by default; forked parent history must be requested explicitly. Role and cross-harness children have no turn, token, tool-call-count, or total-runtime budget by default and run until completion or explicit interruption.
 
 The `ask_user` option picker accepts an immediate choice with Enter, or Tab/`n` opens a note editor for the highlighted supplied option. Escape returns from note entry to the same option, while “Write my own answer” continues to provide a standalone free-form response.
 
@@ -51,7 +51,8 @@ The package recipes `/c7-docs`, `/gather-context-and-clarify`, `/parallel-cleanu
 | `extensions/delegation-gate.ts` | Loaded directly as a local Pi package | Keeps delegation schemas out of the model payload until session-scoped slash commands enable them |
 | `extensions/dag-workflows.ts` | Loaded directly as a local Pi package | Adds the gated workflow tool, recovery prompt, and `/fleet` |
 | `extensions/subagents/*.ts` | Loaded directly as a local Pi package | Adds gated Pi, Claude Code, and Codex children plus `/subagents` conversation takeover |
-| `subagent-config.json` | `~/.pi/agent/extensions/subagent/config.json` | Uses the compact role-subagent tool description when that group is enabled |
+| `subagent-config.json` | `~/.pi/agent/extensions/subagent/config.json` | Uses the concise custom role-subagent tool description when that group is enabled |
+| `subagent-tool-description.md` | `~/.pi/agent/subagent-tool-description.md` | States the no-budget default and requires explicit user approval before adding completion limits |
 | `extensions/ui-dashboard.ts` | Loaded directly as a local Pi package | Adds the responsive footer and session activity tracking |
 | `lib/dashboard/*.ts` | Loaded through the local Pi package | Renders footer segments and tracks active time, compactions, subagents, and workflow progress |
 | `lib/workflows/*.ts` | Loaded through the local Pi package | Validates DAGs, schedules runs, persists state, and renders the fleet UI |
