@@ -181,10 +181,11 @@ test("kill settles a never-exiting process as killed and resolves after settle; 
     assert.equal(report[0].status, "killed");
     assert.equal(report[0].killed, true);
     assert.equal(report[0].wasRunning, true);
-    assert.match(report[0].exit, /^SIG/);
+    if (process.platform === "win32") assert.match(report[0].exit, /^exit /);
+    else assert.match(report[0].exit, /^SIG/);
     const after = manager.view.get(snap.id);
     assert.equal(after?.status, "killed");
-    assert.ok(after?.signal);
+    if (process.platform !== "win32") assert.ok(after?.signal);
 
     const second = await runTool(runtime, manager.kill([snap.id]));
     assert.equal(second[0].killed, false);
