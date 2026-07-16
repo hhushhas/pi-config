@@ -195,7 +195,10 @@ function signalOwnedProcesses(child: ChildProcess, signal: NodeJS.Signals) {
           "/pid",
           String(child.pid),
           "/T",
-          ...(signal === "SIGKILL" ? ["/F"] : []),
+          // Windows has no process-tree equivalent of POSIX SIGTERM. Without
+          // /F, taskkill can terminate the shell while leaving its child
+          // detached with inherited pipes, so the manager can never settle.
+          "/F",
         ],
         { stdio: "ignore", windowsHide: true },
       );
