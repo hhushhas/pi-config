@@ -60,7 +60,7 @@ test("live or queued v1 workflows stay observation-only and are not replaced", a
   } finally { await rm(h.root, { recursive: true, force: true }); }
 });
 
-test("kernel-locked CAS transactions reject stale writers and lose no increments", async () => {
+test("portable locked CAS transactions reject stale writers and lose no increments", async () => {
   const h = await fixture("pi-store-lock-");
   try {
     const workflow = run(h.project);
@@ -85,7 +85,9 @@ test("kernel-locked CAS transactions reject stale writers and lose no increments
     }));
     const final = (await h.store.load(workflow.id))!;
     assert.equal(final.telemetry.attentionEvents, 40);
-    assert.equal((await stat(h.store.statePath(workflow.id))).mode & 0o777, 0o600);
+    if (process.platform !== "win32") {
+      assert.equal((await stat(h.store.statePath(workflow.id))).mode & 0o777, 0o600);
+    }
   } finally { await rm(h.root, { recursive: true, force: true }); }
 });
 
