@@ -25,7 +25,7 @@ import {
 import { createTerminalRuntime, runTool } from "./src/runtime.ts";
 
 const cwd = process.cwd();
-const scriptDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-bg-test-scripts-"));
+const scriptDir = fs.mkdtempSync(path.join(cwd, ".pi-bg-test-scripts-"));
 let scriptCounter = 0;
 test.after(() => fs.rmSync(scriptDir, { recursive: true, force: true }));
 
@@ -33,7 +33,8 @@ test.after(() => fs.rmSync(scriptDir, { recursive: true, force: true }));
 function nodeCmd(script: string) {
   const file = path.join(scriptDir, `script-${++scriptCounter}.cjs`);
   fs.writeFileSync(file, script, "utf8");
-  return `node ${JSON.stringify(file)}`;
+  const relativeFile = path.relative(cwd, file).split(path.sep).join("/");
+  return `node "${relativeFile}"`;
 }
 
 async function withManager(
