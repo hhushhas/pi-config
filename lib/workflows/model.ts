@@ -2,6 +2,9 @@ import { isAbsolute } from "node:path";
 
 export const WORKFLOW_SCHEMA_VERSION = 2 as const;
 
+export const WORKFLOW_HARNESSES = ["pi", "claude", "codex", "grok"] as const;
+export type WorkflowHarness = typeof WORKFLOW_HARNESSES[number];
+
 export type WorkflowRunStatus =
   | "active"
   | "pausing"
@@ -32,6 +35,8 @@ export type ThinkingLevel = typeof THINKING_LEVELS[number];
 export interface WorkflowNodeSpec {
   id: string;
   label?: string;
+  /** Durable execution backend. Omitted preserves the historical Pi role runtime. */
+  harness?: WorkflowHarness;
   agent: string;
   task: string;
   dependsOn: string[];
@@ -103,6 +108,7 @@ export interface LaunchedAttemptV2 extends AttemptBaseV2 {
   artifactVersion: 2;
   launchLeaseEpoch: number;
   expectedExecution: {
+    harness?: WorkflowHarness;
     agent: string;
     model?: string;
     thinking?: string;
@@ -221,6 +227,7 @@ export function validateDefinition(definition: WorkflowDefinition): WorkflowNode
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id)) throw new Error(`Invalid node id '${node.id}'. Use 1-64 letters, numbers, underscores, or hyphens.`);
     if (ids.has(id)) throw new Error(`Duplicate node id '${id}'.`);
     if (!node.agent.trim()) throw new Error(`Node '${id}' needs an agent role.`);
+    if (node.harness !== undefined && !(WORKFLOW_HARNESSES as readonly string[]).includes(node.harness)) throw new Error(`Node '${id}' has unsupported harness '${node.harness}'.`);
     if (!node.task.trim()) throw new Error(`Node '${id}' needs a task.`);
     if (node.cwd !== undefined && (!node.cwd.trim() || isAbsolute(node.cwd) || node.cwd.split(/[\\/]+/).includes(".."))) {
       throw new Error(`Node '${id}' cwd must be a relative path contained by the workflow execution directory.`);

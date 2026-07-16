@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { WorkflowScheduler, type WorkflowRpc } from "./scheduler.ts";
+import { WorkflowScheduler, type WorkflowNotificationDetails, type WorkflowRpc } from "./scheduler.ts";
 import { WorkflowStore } from "./store.ts";
 import type { ControlReply, OperationReply, SpawnReply, WorkflowProvenance } from "./rpc-client.ts";
 
@@ -96,6 +96,7 @@ class FakeRpc implements WorkflowRpc {
       kind: params.sourceRunId ? "resume" : "spawn",
       provenance: params.provenance,
       effectiveExecution: {
+        ...(params.harness ? { harness: params.harness } : {}),
         agent: params.agent,
         cwd: params.cwd,
         ...(params.model ? { model: params.model } : {}),
@@ -117,7 +118,7 @@ class FakeRpc implements WorkflowRpc {
   }
 }
 
-async function harness(prefix: string, concurrency = 2, notice: (message: string, level: "info" | "warning" | "error", triggerTurn?: boolean) => void | Promise<void> = () => {}) {
+async function harness(prefix: string, concurrency = 2, notice: (message: string, level: "info" | "warning" | "error", triggerTurn: boolean, details: WorkflowNotificationDetails) => void | Promise<void> = () => {}) {
   const root = await mkdtemp(join(tmpdir(), prefix));
   const project = join(root, "project");
   await mkdir(project);
@@ -128,6 +129,29 @@ async function harness(prefix: string, concurrency = 2, notice: (message: string
   return { root, project, rpc, store, scheduler };
 }
 
+test("persists and dispatches an explicit external harness without Pi model rewriting", async () => {
+  const h = await harness("pi-dag-harness-");
+  try {
+    const workflow = await h.scheduler.create({ name: "cross harness", nodes: [
+      { id: "build", harness: "codex", agent: "worker", task: "build", model: "gpt-5.6-codex", thinking: "high" },
+      { id: "review", harness: "claude", agent: "reviewer", task: "review", dependsOn: ["build"] },
+    ] });
+    const launch = h.rpc.launches[0]!;
+    assert.equal(launch.params.harness, "codex");
+    assert.equal(launch.params.model, "gpt-5.6-codex");
+    assert.equal(launch.params.thinking, "high");
+    const attempt = workflow.nodes.build.attempts[0]!;
+    assert.equal(attempt.kind === "legacy" ? undefined : attempt.expectedExecution.harness, "codex");
+    assert.equal(attempt.kind === "legacy" ? undefined : attempt.expectedExecution.model, "gpt-5.6-codex");
+    await h.rpc.finish("run-1", "completed");
+    await h.scheduler.tick();
+    assert.equal(workflow.nodes.build.status, "succeeded");
+    assert.equal(workflow.nodes.review.status, "running");
+    assert.equal(h.rpc.launches[1]?.params.harness, "claude");
+    assert.equal(workflow.nodes.review.attempts[0]?.dependencyAttemptIds.build, "attempt-1");
+  } finally { h.scheduler.dispose(); await rm(h.root, { recursive: true, force: true }); }
+});
+
 test("launches dependents only after a provenance-backed prerequisite succeeds", async () => {
   const h = await harness("pi-dag-v2-");
   try {
@@ -136,6 +160,7 @@ test("launches dependents only after a provenance-backed prerequisite succeeds",
       { id: "second", agent: "reviewer", task: "second", dependsOn: ["first"] },
     ] });
     assert.deepEqual(h.rpc.launches.map((launch) => launch.params.task), ["first"]);
+    assert.equal(h.rpc.launches[0]?.params.harness, undefined, "legacy Pi RPC wire contract must not receive the additive harness field");
     await h.rpc.finish("run-1", "completed");
     await h.scheduler.tick();
     assert.deepEqual(h.rpc.launches.map((launch) => launch.params.task), ["first", "second"]);
@@ -315,9 +340,9 @@ test("workflow and node cwd validation rejects traversal and symlink escapes", a
 
 test("notification delivery failure leaves lifecycle unchanged and retries exactly once", async () => {
   let fail = true;
-  const deliveries: Array<{ message: string; triggerTurn?: boolean }> = [];
-  const h = await harness("pi-dag-notification-", 1, (message, _level, triggerTurn) => {
-    deliveries.push({ message, triggerTurn });
+  const deliveries: Array<{ message: string; triggerTurn: boolean; details: WorkflowNotificationDetails }> = [];
+  const h = await harness("pi-dag-notification-", 1, (message, _level, triggerTurn, details) => {
+    deliveries.push({ message, triggerTurn, details });
     if (fail) throw new Error("notice unavailable");
   });
   try {
@@ -338,5 +363,17 @@ test("notification delivery failure leaves lifecycle unchanged and retries exact
     assert.equal(current.telemetry.parentWakeCount, 1);
     assert.equal(deliveries.length, 2);
     assert.ok(Buffer.byteLength(deliveries[1]!.message, "utf8") < 1024);
+    assert.deepEqual(deliveries[1]!.details, {
+      workflowId: workflow.id,
+      name: "notification retry",
+      status: "succeeded",
+      completed: 1,
+      total: 1,
+      failedNodeIds: [],
+      harnesses: ["pi"],
+      totalTokens: 0,
+      costUsd: 0,
+      statePath: h.store.statePath(workflow.id),
+    });
   } finally { h.scheduler.dispose(); await rm(h.root, { recursive: true, force: true }); }
 });

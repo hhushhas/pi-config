@@ -67,6 +67,10 @@ test("rejects cycles and unknown dependencies", () => {
     name: "thinking",
     nodes: [{ id: "a", agent: "worker", task: "a", thinking: "light" as never }],
   }), /unsupported reasoning effort/);
+  assert.throws(() => validateDefinition({
+    name: "harness",
+    nodes: [{ id: "a", agent: "worker", task: "a", harness: "shell" as never }],
+  }), /unsupported harness/);
 });
 
 test("releases only nodes whose dependencies succeeded", () => {

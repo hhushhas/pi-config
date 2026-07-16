@@ -1,18 +1,23 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 import { ActiveClock, countCompactions, estimateHistoricalActiveMs } from "../lib/dashboard/metrics.ts";
 import { renderFooter } from "../lib/dashboard/footer.ts";
+import { renderInlineAgentCard, type OrchestrationLifecycle } from "../lib/orchestration/ui.ts";
 import {
+  DIRECT_AGENT_INFO_CHANNEL,
   GIT_INFO_CHANNEL,
   MODEL_INFO_CHANNEL,
   REFRESH_CHANNEL,
   WORKFLOW_INFO_CHANNEL,
   emptyGitInfoState,
   emptyModelInfoState,
+  isDirectAgentInfoState,
   isGitInfoState,
   isModelInfoState,
   isWorkflowInfoState,
+  type DirectAgentInfoState,
   type WorkflowInfoState,
 } from "../lib/dashboard/state.ts";
 
@@ -20,8 +25,105 @@ const ASYNC_STARTED = "subagent:async-started";
 const ASYNC_COMPLETE = "subagent:async-complete";
 const ASYNC_DASHBOARD_REFRESH = "subagent:dashboard-refresh";
 const ASYNC_DASHBOARD_SNAPSHOT = "subagent:dashboard-snapshot";
+const CONTROL_EVENT = "subagent:control-event";
+const ATTENTION_WIDGET_KEY = "orchestration-attention";
 const RENDER_INTERVAL_MS = 1_000;
 const PERSIST_INTERVAL_MS = 10_000;
+
+interface RoleNotification {
+  agent: string;
+  status: "completed" | "failed" | "paused";
+  output: string;
+  taskInfo?: string;
+  durationMs?: number;
+  session?: string;
+}
+
+function messageText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.filter((item): item is { type: "text"; text: string } =>
+    record(item) && item.type === "text" && typeof item.text === "string",
+  ).map((item) => item.text).join("\n");
+}
+
+function roleNotification(details: unknown, content: string): RoleNotification {
+  if (record(details)
+    && typeof details.agent === "string"
+    && ["completed", "failed", "paused"].includes(String(details.status))) {
+    return {
+      agent: details.agent,
+      status: details.status as RoleNotification["status"],
+      output: typeof details.resultPreview === "string" ? details.resultPreview : content,
+      ...(typeof details.taskInfo === "string" ? { taskInfo: details.taskInfo } : {}),
+      ...(typeof details.durationMs === "number" ? { durationMs: details.durationMs } : {}),
+      ...(typeof details.sessionValue === "string" ? { session: details.sessionValue } : {}),
+    };
+  }
+  const lines = content.split("\n");
+  const single = (lines[0] ?? "").match(/^Background task (completed|failed|paused): \*\*(.+?)\*\*(?:\s+(\([^)]*\)))?$/);
+  if (single) {
+    return {
+      agent: single[2] ?? "Pi role agent",
+      status: single[1] as RoleNotification["status"],
+      taskInfo: single[3],
+      output: lines.slice(2).join("\n").trim() || "(no output)",
+    };
+  }
+  const grouped = (lines[0] ?? "").match(/^Background tasks completed \((\d+)\):/);
+  return {
+    agent: grouped ? `${grouped[1]} Pi role agents` : "Pi role agent",
+    status: "completed",
+    output: (grouped ? lines.slice(2) : lines).join("\n").trim() || "(no output)",
+  };
+}
+
+function roleLifecycle(status: RoleNotification["status"]): OrchestrationLifecycle {
+  if (status === "completed") return "done";
+  if (status === "paused") return "paused";
+  return "failed";
+}
+
+export function registerRoleMessageRenderers(pi: Pick<ExtensionAPI, "registerMessageRenderer">): void {
+  pi.registerMessageRenderer("subagent-notify", (message, { expanded }, theme) => {
+    const content = messageText(message.content);
+    const details = roleNotification(message.details, content);
+    return renderInlineAgentCard(theme, {
+      lifecycle: roleLifecycle(details.status),
+      title: details.agent,
+      kind: "role agent",
+      harness: "Pi",
+      activity: `${details.status}${details.taskInfo ? ` · ${details.taskInfo}` : ""}`,
+      output: details.output,
+      metadata: [
+        details.durationMs !== undefined ? `${Math.round(details.durationMs / 1000)}s` : "",
+        details.session ?? "",
+      ].filter(Boolean),
+    }, expanded);
+  });
+
+  pi.registerMessageRenderer("subagent_control_notice", (message, { expanded }, theme) => {
+    const details = record(message.details) ? message.details : {};
+    const event = record(details.event) ? details.event : {};
+    const agent = typeof event.agent === "string" ? event.agent : "Pi role agent";
+    const content = messageText(message.content);
+    const activity = typeof event.message === "string" ? event.message : content || "inspect the role agent";
+    return renderInlineAgentCard(theme, {
+      lifecycle: "attention",
+      title: agent,
+      kind: "role agent",
+      harness: "Pi",
+      identity: typeof event.runId === "string" ? event.runId : undefined,
+      activity,
+      output: content || activity,
+      metadata: [
+        typeof event.reason === "string" ? event.reason : "",
+        typeof event.currentTool === "string" ? event.currentTool : "",
+        typeof event.currentPath === "string" ? event.currentPath : "",
+      ].filter(Boolean),
+    }, expanded);
+  });
+}
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -58,10 +160,12 @@ function loadActiveMs(file: string, entries: ReturnType<ExtensionContext["sessio
 }
 
 export default function uiDashboard(pi: ExtensionAPI, metricsRoot = join(getAgentDir(), "dashboard-session-metrics")) {
+  registerRoleMessageRenderers(pi);
   let ctx: ExtensionContext | undefined;
   let model = emptyModelInfoState();
   let git = emptyGitInfoState();
   let workflows: WorkflowInfoState = { active: 0, runningAgents: 0 };
+  let directAgents: DirectAgentInfoState = { runningAgents: 0 };
   let clock = new ActiveClock();
   let compactions = 0;
   let rootActive = false;
@@ -73,6 +177,8 @@ export default function uiDashboard(pi: ExtensionAPI, metricsRoot = join(getAgen
   let busUnsubscribes: Array<() => void> = [];
   const foreground = new Map<string, number>();
   const asyncRuns = new Map<string, number>();
+  const attention = new Map<string, { source?: string; agent: string; message: string }>();
+  let attentionWidgetSignature = "";
 
   const runningSubagents = () => {
     const foregroundTotal = [...foreground.values()].reduce((total, count) => total + count, 0);
@@ -81,7 +187,7 @@ export default function uiDashboard(pi: ExtensionAPI, metricsRoot = join(getAgen
   };
 
   function syncClock(now = Date.now()): void {
-    clock.setActive(rootActive || runningSubagents() > 0 || workflows.runningAgents > 0, now);
+    clock.setActive(rootActive || runningSubagents() > 0 || workflows.runningAgents > 0 || directAgents.runningAgents > 0, now);
   }
 
   function persist(now = Date.now()): void {
@@ -105,10 +211,53 @@ export default function uiDashboard(pi: ExtensionAPI, metricsRoot = join(getAgen
     requestRender?.();
   };
 
+  const updateAttentionWidget = () => {
+    if (!ctx || ctx.mode !== "tui") return;
+    const workflowAttention = workflows.attention ?? 0;
+    const count = Math.max(attention.size, workflowAttention) + (directAgents.attention ?? 0);
+    const latest = [...attention.values()].at(-1);
+    const signature = `${count}:${latest?.agent ?? ""}:${latest?.message ?? ""}`;
+    if (signature === attentionWidgetSignature) return;
+    attentionWidgetSignature = signature;
+    if (count === 0) {
+      ctx.ui.setWidget(ATTENTION_WIDGET_KEY, undefined);
+      return;
+    }
+    ctx.ui.setWidget(ATTENTION_WIDGET_KEY, (_tui, theme) => ({
+      render(width: number) {
+        const subject = latest ? `${latest.agent}: ${latest.message}` : "workflow node needs attention · /fleet inspect";
+        return [truncateToWidth(`${theme.fg("warning", "! ")}${theme.bold(`${count} ${count === 1 ? "agent needs" : "agents need"} attention`)} ${theme.fg("muted", `· ${subject}`)}`, width, "…", true)];
+      },
+      invalidate() {},
+    }));
+  };
+
   const handleWorkflowInfo = (value: unknown) => {
     if (!isWorkflowInfoState(value)) return;
     workflows = value;
     syncClock();
+    updateAttentionWidget();
+    requestRender?.();
+  };
+
+  const handleDirectAgentInfo = (value: unknown) => {
+    if (!isDirectAgentInfoState(value)) return;
+    directAgents = value;
+    syncClock();
+    updateAttentionWidget();
+    requestRender?.();
+  };
+
+  const handleControlEvent = (value: unknown) => {
+    if (!record(value) || !record(value.event) || value.event.type !== "needs_attention") return;
+    const runId = typeof value.event.runId === "string" ? value.event.runId : undefined;
+    if (!runId) return;
+    attention.set(runId, {
+      source: typeof value.source === "string" ? value.source : undefined,
+      agent: typeof value.event.agent === "string" ? value.event.agent : "agent",
+      message: typeof value.event.message === "string" ? value.event.message : "inspect the run",
+    });
+    updateAttentionWidget();
     requestRender?.();
   };
 
@@ -124,7 +273,9 @@ export default function uiDashboard(pi: ExtensionAPI, metricsRoot = join(getAgen
     const id = typeof value.runId === "string" ? value.runId : typeof value.id === "string" ? value.id : undefined;
     if (!id) return;
     asyncRuns.delete(id);
+    attention.delete(id);
     syncClock();
+    updateAttentionWidget();
     requestRender?.();
   };
 
@@ -141,9 +292,11 @@ export default function uiDashboard(pi: ExtensionAPI, metricsRoot = join(getAgen
       pi.events.on(MODEL_INFO_CHANNEL, handleModelInfo),
       pi.events.on(GIT_INFO_CHANNEL, handleGitInfo),
       pi.events.on(WORKFLOW_INFO_CHANNEL, handleWorkflowInfo),
+      pi.events.on(DIRECT_AGENT_INFO_CHANNEL, handleDirectAgentInfo),
       pi.events.on(ASYNC_STARTED, handleAsyncStarted),
       pi.events.on(ASYNC_COMPLETE, handleAsyncComplete),
       pi.events.on(ASYNC_DASHBOARD_SNAPSHOT, handleAsyncSnapshot),
+      pi.events.on(CONTROL_EVENT, handleControlEvent),
     ];
   }
 
@@ -152,9 +305,12 @@ export default function uiDashboard(pi: ExtensionAPI, metricsRoot = join(getAgen
     model = emptyModelInfoState();
     git = emptyGitInfoState();
     workflows = { active: 0, runningAgents: 0 };
+    directAgents = { runningAgents: 0 };
     rootActive = false;
     foreground.clear();
     asyncRuns.clear();
+    attention.clear();
+    attentionWidgetSignature = "";
     asyncSnapshot = 0;
     subscribeBus();
     const entries = nextCtx.sessionManager.getBranch();
@@ -175,6 +331,8 @@ export default function uiDashboard(pi: ExtensionAPI, metricsRoot = join(getAgen
               git,
               metrics: { activeMs: clock.value(), compactions, runningSubagents: runningSubagents() },
               workflows,
+              directAgents,
+              attention: attention.size,
             }, footerData, theme, width);
           },
         };
@@ -217,7 +375,11 @@ export default function uiDashboard(pi: ExtensionAPI, metricsRoot = join(getAgen
 
   pi.on("tool_execution_end", (event) => {
     if (!foreground.delete(event.toolCallId)) return;
+    for (const [runId, item] of attention) {
+      if (item.source === "foreground") attention.delete(runId);
+    }
     syncClock();
+    updateAttentionWidget();
     requestRender?.();
   });
 
@@ -227,6 +389,10 @@ export default function uiDashboard(pi: ExtensionAPI, metricsRoot = join(getAgen
     asyncRuns.clear();
     asyncSnapshot = 0;
     workflows = { active: 0, runningAgents: 0 };
+    directAgents = { runningAgents: 0 };
+    attention.clear();
+    attentionWidgetSignature = "";
+    if (shutdownCtx.mode === "tui") shutdownCtx.ui.setWidget(ATTENTION_WIDGET_KEY, undefined);
     syncClock();
     persist();
     if (renderTimer) clearInterval(renderTimer);

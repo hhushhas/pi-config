@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { EventBus } from "@earendil-works/pi-coding-agent";
+import type { WorkflowHarness } from "./model.ts";
 
 const VERSION = 2 as const;
 const REQUEST_EVENT = "subagents:rpc:v2:request";
 const READY_EVENT = "subagents:rpc:v2:ready";
 const REPLY_PREFIX = "subagents:rpc:v2:reply:";
+const BACKEND_REQUEST_EVENT = "subagents:workflow-backend:v1:request";
+const BACKEND_REPLY_PREFIX = "subagents:workflow-backend:v1:reply:";
 
 export type RpcMethod = "ping" | "status" | "lookup" | "spawn" | "interrupt" | "stop" | "steer" | "resume";
 
@@ -92,7 +95,7 @@ export interface RuntimeStatus {
     workflowCapabilityHash?: string;
     ownerLeaseEpoch?: number;
   };
-  runtimeLaunch?: { operationId: string; runId: string; kind: "spawn" | "resume"; provenance: WorkflowProvenance; effectiveExecution: { agent: string; cwd: string; model?: string; thinking?: string; timeoutMs?: number; notificationMode: "default" | "event-only" }; sourceRunId?: string; sourceSessionFile?: string; sourceAttemptId?: string; sourceProvenance?: WorkflowProvenance };
+  runtimeLaunch?: { operationId: string; runId: string; kind: "spawn" | "resume"; provenance: WorkflowProvenance; effectiveExecution: { harness?: WorkflowHarness; agent: string; cwd: string; model?: string; thinking?: string; timeoutMs?: number; notificationMode: "default" | "event-only" }; sourceRunId?: string; sourceSessionFile?: string; sourceAttemptId?: string; sourceProvenance?: WorkflowProvenance };
   terminal?: { reason: "completed" | "failed" | "paused" | "stopped" | "timed_out" | "process_lost"; at: number; controlRequestId?: string };
   error?: string;
 }
@@ -131,20 +134,24 @@ export class SubagentRpcClient {
     });
   }
 
-  spawn(params: Record<string, unknown>, requestId: string): Promise<SpawnReply> { return this.request("spawn", params, requestId, 30_000); }
-  resume(params: Record<string, unknown>, requestId: string): Promise<SpawnReply> { return this.request("resume", params, requestId, 30_000); }
-  lookup(params: { operationId: string; workflowCapability: string; provenance: WorkflowProvenance }): Promise<OperationReply> { return this.request("lookup", params, this.createRequestId()); }
-  status(runId: string): Promise<RuntimeStatus> { return this.request("status", { runId }, this.createRequestId()); }
-  interrupt(runId: string, authority?: { controlRequestId: string; workflowCapability: string; provenance: WorkflowProvenance }): Promise<ControlReply> {
+  spawn(params: Record<string, unknown>, requestId: string): Promise<SpawnReply> { return this.requestForHarness("spawn", params, requestId, 30_000); }
+  resume(params: Record<string, unknown>, requestId: string): Promise<SpawnReply> { return this.requestForHarness("resume", params, requestId, 30_000); }
+  lookup(params: { operationId: string; workflowCapability: string; provenance: WorkflowProvenance; harness?: WorkflowHarness }): Promise<OperationReply> { return this.requestForHarness("lookup", params, this.createRequestId()); }
+  status(runId: string, authority?: { workflowCapability: string; provenance: WorkflowProvenance; harness?: WorkflowHarness }): Promise<RuntimeStatus> {
+    return authority?.harness && authority.harness !== "pi"
+      ? this.requestForHarness("status", { runId, ...authority }, this.createRequestId())
+      : this.request("status", { runId }, this.createRequestId());
+  }
+  interrupt(runId: string, authority?: { controlRequestId: string; workflowCapability: string; provenance: WorkflowProvenance; harness?: WorkflowHarness }): Promise<ControlReply> {
     if (!authority) return Promise.reject(new Error("Workflow pause requires capability authority."));
-    return this.request("interrupt", { runId, ...authority }, this.createRequestId());
+    return this.requestForHarness("interrupt", { runId, ...authority }, this.createRequestId());
   }
-  pause(runId: string, authority: { controlRequestId: string; workflowCapability: string; provenance: WorkflowProvenance }): Promise<ControlReply> { return this.interrupt(runId, authority); }
-  stop(runId: string, authority?: { controlRequestId: string; workflowCapability: string; provenance: WorkflowProvenance }): Promise<ControlReply> {
+  pause(runId: string, authority: { controlRequestId: string; workflowCapability: string; provenance: WorkflowProvenance; harness?: WorkflowHarness }): Promise<ControlReply> { return this.interrupt(runId, authority); }
+  stop(runId: string, authority?: { controlRequestId: string; workflowCapability: string; provenance: WorkflowProvenance; harness?: WorkflowHarness }): Promise<ControlReply> {
     if (!authority) return Promise.reject(new Error("Workflow stop requires capability authority."));
-    return this.request("stop", { runId, ...authority }, this.createRequestId());
+    return this.requestForHarness("stop", { runId, ...authority }, this.createRequestId());
   }
-  steer(runId: string, message: string, authority: { controlRequestId: string; workflowCapability: string; provenance: WorkflowProvenance }): Promise<ControlReply> { return this.request("steer", { runId, message, ...authority }, this.createRequestId()); }
+  steer(runId: string, message: string, authority: { controlRequestId: string; workflowCapability: string; provenance: WorkflowProvenance; harness?: WorkflowHarness }): Promise<ControlReply> { return this.requestForHarness("steer", { runId, message, ...authority }, this.createRequestId()); }
 
   dispose(): void {
     this.disposed = true;
@@ -161,7 +168,12 @@ export class SubagentRpcClient {
     }
   }
 
-  private request<T>(method: RpcMethod, params: unknown, requestId: string, timeoutMs = 15_000): Promise<T> {
+  private requestForHarness<T>(method: RpcMethod, params: unknown, requestId: string, timeoutMs = 15_000): Promise<T> {
+    const harness = (params as { harness?: WorkflowHarness } | undefined)?.harness;
+    return this.request(method, params, requestId, timeoutMs, harness && harness !== "pi" ? { request: BACKEND_REQUEST_EVENT, reply: BACKEND_REPLY_PREFIX } : undefined);
+  }
+
+  private request<T>(method: RpcMethod, params: unknown, requestId: string, timeoutMs = 15_000, channel?: { request: string; reply: string }): Promise<T> {
     if (this.disposed) return Promise.reject(new Error("Subagent RPC client is disposed."));
     return new Promise<T>((resolve, reject) => {
       let settled = false;
@@ -174,7 +186,7 @@ export class SubagentRpcClient {
         this.cleanups.delete(cleanup);
         if (error) reject(error); else resolve(value!);
       };
-      unsubscribe = this.events.on(`${REPLY_PREFIX}${requestId}`, (value) => {
+      unsubscribe = this.events.on(`${channel?.reply ?? REPLY_PREFIX}${requestId}`, (value) => {
         const reply = value as RpcReply<T>;
         if (reply?.version !== VERSION) return finish(new SubagentRpcError("unsupported_version", `Subagent RPC ${method} returned protocol ${String(reply?.version)}.`, method));
         if (!reply.success) return finish(new SubagentRpcError(reply.error?.code ?? "execution_failed", reply.error?.message ?? `Subagent RPC ${method} failed.`, method));
@@ -183,7 +195,7 @@ export class SubagentRpcClient {
       const cleanup = () => finish(new Error("Subagent RPC client disposed."));
       this.cleanups.add(cleanup);
       const timer = setTimeout(() => finish(new SubagentRpcError("timeout", `Subagent RPC ${method} timed out.`, method)), timeoutMs);
-      this.events.emit(REQUEST_EVENT, { version: VERSION, requestId, method, ...(params !== undefined ? { params } : {}), source: { extension: "dag-workflows" } });
+      this.events.emit(channel?.request ?? REQUEST_EVENT, { version: VERSION, requestId, method, ...(params !== undefined ? { params } : {}), source: { extension: "dag-workflows" } });
     });
   }
 }

@@ -28,8 +28,12 @@
     "extensions/subagents/index.ts",
     "extensions/subagents/README.md",
     "extensions/subagents/src/",
+    "extensions/ui-dashboard.ts",
     "keybindings.json",
+    "lib/dashboard/footer.ts",
+    "lib/dashboard/metrics.ts",
     "lib/dashboard/state.ts",
+    "lib/orchestration/ui.ts",
     "lib/workflows/fleet-overlay.ts",
     "lib/workflows/model.ts",
     "lib/workflows/projection.ts",
@@ -59,7 +63,8 @@
       "extensions/dcg-guard.ts",
       "extensions/manual-only-skills.ts",
       "extensions/openai-image-generation.ts",
-      "extensions/auto-name/index.ts"
+      "extensions/auto-name/index.ts",
+      "extensions/ui-dashboard.ts"
     ],
     "skills": [
       "skills/codex-review/SKILL.md",
@@ -77,7 +82,7 @@
     "doctor": "node scripts/doctor.mjs",
     "test": "pnpm run test:core && pnpm run test:subagents && pnpm run test:distribution",
     "test:core": "tsx --test lib/**/*.test.ts extensions/delegation-gate.test.ts extensions/foreground-bash-policy.test.ts extensions/background-terminals/*.test.ts extensions/ask-user/ask-user.test.ts extensions/auto-name/auto-name-utils.test.ts",
-    "test:subagents": "tsx --test extensions/subagents/manager.test.ts extensions/subagents/result-delivery.test.ts extensions/subagents/context-usage.test.ts extensions/subagents/takeover.test.ts",
+    "test:subagents": "tsx --test extensions/subagents/manager.test.ts extensions/subagents/result-delivery.test.ts extensions/subagents/context-usage.test.ts extensions/subagents/takeover.test.ts extensions/subagents/durable-workflow-backend.test.ts",
     "test:distribution": "tsx --test scripts/*.test.ts",
     "test:subagents:live": "tsx --test extensions/subagents/claude.test.ts extensions/subagents/codex.test.ts extensions/subagents/grok.test.ts",
     "typecheck": "tsc --noEmit"

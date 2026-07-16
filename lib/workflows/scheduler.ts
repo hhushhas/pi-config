@@ -14,13 +14,26 @@ import {
   type AttemptControl,
   type LaunchedAttemptV2,
   type WorkflowDefinition,
+  type WorkflowHarness,
   type WorkflowNode,
   type WorkflowRun,
 } from "./model.ts";
 import { authoritativeAttemptForRun, discoverExternalRuns, normalizedModel, rebuildWorkflowTelemetry, refreshAttemptFromDisk } from "./runtime.ts";
 
 type Listener = () => void;
-type Notice = (message: string, level: "info" | "warning" | "error", triggerTurn?: boolean) => void | Promise<void>;
+export interface WorkflowNotificationDetails {
+  workflowId: string;
+  name: string;
+  status: "succeeded" | "blocked" | "failed" | "paused" | "stopped";
+  completed: number;
+  total: number;
+  failedNodeIds: string[];
+  harnesses: WorkflowHarness[];
+  totalTokens: number;
+  costUsd: number;
+  statePath: string;
+}
+type Notice = (message: string, level: "info" | "warning" | "error", triggerTurn: boolean, details: WorkflowNotificationDetails) => void | Promise<void>;
 type RuntimeIdentity = { processId: number; isProcessAlive(processId: number): boolean };
 
 const DEFAULT_RUNTIME: RuntimeIdentity = {
@@ -34,11 +47,11 @@ export interface WorkflowRpc {
   createRequestId(): string;
   spawn(params: Record<string, unknown>, requestId: string): Promise<SpawnReply>;
   resume(params: Record<string, unknown>, requestId: string): Promise<SpawnReply>;
-  lookup(params: { operationId: string; workflowCapability: string; provenance: WorkflowProvenance }): Promise<OperationReply>;
-  status(runId: string): Promise<unknown>;
-  interrupt(runId: string, authority: { controlRequestId: string; workflowCapability: string; provenance: WorkflowProvenance }): Promise<ControlReply>;
-  stop(runId: string, authority: { controlRequestId: string; workflowCapability: string; provenance: WorkflowProvenance }): Promise<ControlReply>;
-  steer(runId: string, message: string, authority: { controlRequestId: string; workflowCapability: string; provenance: WorkflowProvenance }): Promise<ControlReply>;
+  lookup(params: { operationId: string; workflowCapability: string; provenance: WorkflowProvenance; harness?: WorkflowHarness }): Promise<OperationReply>;
+  status(runId: string, authority?: { workflowCapability: string; provenance: WorkflowProvenance; harness?: WorkflowHarness }): Promise<unknown>;
+  interrupt(runId: string, authority: { controlRequestId: string; workflowCapability: string; provenance: WorkflowProvenance; harness?: WorkflowHarness }): Promise<ControlReply>;
+  stop(runId: string, authority: { controlRequestId: string; workflowCapability: string; provenance: WorkflowProvenance; harness?: WorkflowHarness }): Promise<ControlReply>;
+  steer(runId: string, message: string, authority: { controlRequestId: string; workflowCapability: string; provenance: WorkflowProvenance; harness?: WorkflowHarness }): Promise<ControlReply>;
 }
 
 export class WorkflowScheduler {
@@ -391,7 +404,10 @@ export class WorkflowScheduler {
     const attemptNumber = node.attempts.length + 1;
     const attemptDir = await this.store.prepareAttempt(workflow.id, node.spec.id, attemptNumber);
     const executionCwd = await this.resolveNodeCwd(workflow.executionCwd, node.spec.cwd);
-    const expectedModel = kind === "resume" ? previous?.telemetry?.model ?? normalizedModel(node.spec.model, node.spec.thinking, this.fallbackModel) : normalizedModel(node.spec.model, node.spec.thinking, this.fallbackModel);
+    const harness = node.spec.harness ?? "pi";
+    const defaultModel = harness === "pi" ? this.fallbackModel : undefined;
+    const configuredModel = harness === "pi" ? normalizedModel(node.spec.model, node.spec.thinking, defaultModel) : node.spec.model;
+    const expectedModel = kind === "resume" ? previous?.telemetry?.model ?? configuredModel : configuredModel;
     const expectedThinking = kind === "resume" ? previous?.telemetry?.thinking ?? node.spec.thinking : node.spec.thinking;
     const attempt: LaunchedAttemptV2 = {
       id: `attempt-${attemptNumber}`,
@@ -408,6 +424,7 @@ export class WorkflowScheduler {
       artifactVersion: 2,
       launchLeaseEpoch: workflow.ownerLeaseEpoch,
       expectedExecution: {
+        harness,
         agent: node.spec.agent,
         ...(expectedModel ? { model: expectedModel } : {}),
         ...(expectedThinking ? { thinking: expectedThinking } : {}),
@@ -429,6 +446,7 @@ export class WorkflowScheduler {
     return {
       agent: node.spec.agent,
       task: node.spec.task,
+      ...(node.spec.harness && node.spec.harness !== "pi" ? { harness: node.spec.harness } : {}),
       cwd,
       context: "fresh",
       async: true,
@@ -453,7 +471,7 @@ export class WorkflowScheduler {
       catch (error) {
         const code = (error as { code?: string }).code;
         if (code !== "timeout" && code !== "unknown_outcome") throw error;
-        const operation = await this.rpc.lookup({ operationId: attempt.launchOperationId, workflowCapability: workflow.workflowCapability, provenance: this.provenance(workflow, node, attempt) });
+        const operation = await this.rpc.lookup({ operationId: attempt.launchOperationId, workflowCapability: workflow.workflowCapability, provenance: this.provenance(workflow, node, attempt), ...(node.spec.harness && node.spec.harness !== "pi" ? { harness: node.spec.harness } : {}) });
         reply = { runId: operation.runId, asyncDir: operation.asyncDir, operation };
       }
       const runId = reply.runId ?? reply.operation?.runId ?? reply.details?.runId ?? reply.details?.asyncId;
@@ -520,7 +538,7 @@ export class WorkflowScheduler {
   }
 
   private authority(workflow: WorkflowRun, node: WorkflowNode, attempt: LaunchedAttemptV2, controlRequestId: string) {
-    return { controlRequestId, workflowCapability: workflow.workflowCapability, provenance: this.provenance(workflow, node, attempt) };
+    return { controlRequestId, workflowCapability: workflow.workflowCapability, provenance: this.provenance(workflow, node, attempt), ...(node.spec.harness && node.spec.harness !== "pi" ? { harness: node.spec.harness } : {}) };
   }
 
   private async consumeCompletion(value: unknown): Promise<void> {
@@ -644,8 +662,23 @@ export class WorkflowScheduler {
 
   private async deliverNotification(workflow: WorkflowRun, record: import("./model.ts").NotificationRecord): Promise<void> {
     record.attemptedAt = Date.now();
+    const failedNodeIds = Object.values(workflow.nodes)
+      .filter((node) => ["failed", "orphaned"].includes(node.status))
+      .map((node) => node.spec.id);
+    const details: WorkflowNotificationDetails = {
+      workflowId: workflow.id,
+      name: workflow.name,
+      status: record.category,
+      completed: Object.values(workflow.nodes).filter((node) => node.status === "succeeded").length,
+      total: Object.keys(workflow.nodes).length,
+      failedNodeIds,
+      harnesses: [...new Set(Object.values(workflow.nodes).map((node) => node.spec.harness ?? "pi"))],
+      totalTokens: workflow.telemetry.totalTokens,
+      costUsd: workflow.telemetry.costUsd,
+      statePath: this.store.statePath(workflow.id),
+    };
     try {
-      await this.notice(record.message, record.category === "succeeded" ? "info" : "warning", record.triggerTurn);
+      await this.notice(record.message, record.category === "succeeded" ? "info" : "warning", record.triggerTurn, details);
       record.deliveredAt = Date.now();
       record.error = undefined;
       workflow.telemetry.notificationCount += 1;

@@ -54,7 +54,7 @@ function validateAuthority(workflow: WorkflowRun, node: WorkflowNode, attempt: N
   if (launch.operationId !== attempt.launchOperationId || launch.runId !== attempt.packageRunId) return "Runtime launch operation does not match this attempt.";
   if (launch.provenance.workflowId !== workflow.id || launch.provenance.nodeId !== node.spec.id || launch.provenance.attemptId !== attempt.id || launch.provenance.ownerLeaseEpoch !== attempt.launchLeaseEpoch) return "Runtime launch provenance does not match this attempt.";
   const expected = attempt.expectedExecution;
-  if (launch.effectiveExecution.agent !== expected.agent || launch.effectiveExecution.model !== expected.model || launch.effectiveExecution.thinking !== expected.thinking
+  if ((launch.effectiveExecution.harness ?? "pi") !== (expected.harness ?? "pi") || launch.effectiveExecution.agent !== expected.agent || launch.effectiveExecution.model !== expected.model || launch.effectiveExecution.thinking !== expected.thinking
     || resolve(launch.effectiveExecution.cwd) !== expected.cwd || launch.effectiveExecution.timeoutMs !== expected.timeoutMs || launch.effectiveExecution.notificationMode !== expected.notificationMode) return "Runtime effective execution contract does not match this attempt.";
   if (!status.cwd || resolve(status.cwd) !== expected.cwd) return `Runtime cwd mismatch: expected '${expected.cwd}', got '${status.cwd ?? "missing"}'.`;
   if (attempt.kind === "resume") {
@@ -86,7 +86,13 @@ export async function refreshAttemptFromDisk(workflow: WorkflowRun, node: Workfl
       return true;
     }
     const pending = [...attempt.controls].reverse().find((control) => ["pause", "stop"].includes(control.action) && !control.confirmedAt);
-    if (status.terminal) {
+    if (!status.terminal && status.pid && Date.now() - (status.lastUpdate ?? attempt.requestedAt) >= 5_000 && !processAlive(status.pid)) {
+      attempt.endedAt = Date.now();
+      attempt.error = "The durable runtime process exited without publishing a terminal record.";
+      attempt.state = "orphaned";
+      attempt.telemetry.terminalReason = "process_lost";
+      if (authoritative) node.status = "orphaned";
+    } else if (status.terminal) {
       attempt.endedAt = status.terminal.at;
       attempt.completionSeen = true;
       const expectedReason = pending?.action === "pause" ? "paused" : pending?.action === "stop" ? "stopped" : undefined;

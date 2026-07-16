@@ -55,6 +55,7 @@ export function statusProjection(workflow: WorkflowRun): string {
       return {
         id: node.spec.id,
         label: truncate(node.spec.label ?? node.spec.id, 120),
+        harness: node.spec.harness ?? "pi",
         status: effectiveNodeStatus(workflow, node),
         dependsOn: node.spec.dependsOn,
         cwd: truncate(node.spec.cwd, 160),
@@ -87,6 +88,8 @@ export function inspectProjection(workflow: WorkflowRun, nodeId: string): string
     node: {
       id: node.spec.id,
       label: truncate(node.spec.label ?? node.spec.id, 120),
+      harness: node.spec.harness ?? "pi",
+      agent: truncate(node.spec.agent, 100),
       status: effectiveNodeStatus(workflow, node),
       dependsOn: node.spec.dependsOn,
       executionCwd: truncate(node.spec.cwd ? `${workflow.executionCwd}/${node.spec.cwd}` : workflow.executionCwd, 320),
@@ -102,6 +105,7 @@ export function inspectProjection(workflow: WorkflowRun, nodeId: string): string
       previousAttemptId: attempt.kind !== "legacy" ? attempt.previousAttemptId : undefined,
       dependencyAttemptIds: attempt.dependencyAttemptIds,
       state: attempt.state,
+      expectedExecution: attempt.kind !== "legacy" ? { ...attempt.expectedExecution, harness: attempt.expectedExecution.harness ?? "pi" } : undefined,
       requestedAt: attempt.requestedAt,
       startedAt: attempt.startedAt,
       endedAt: attempt.endedAt,

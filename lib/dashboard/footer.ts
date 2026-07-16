@@ -3,7 +3,7 @@ import { relative } from "node:path";
 import type { ReadonlyFooterDataProvider, Theme } from "@earendil-works/pi-coding-agent";
 import { getCapabilities, hyperlink, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { formatDuration, type SessionMetricsSnapshot } from "./metrics.ts";
-import type { GitInfoState, ModelInfoState, WorkflowInfoState } from "./state.ts";
+import type { DirectAgentInfoState, GitInfoState, ModelInfoState, WorkflowInfoState } from "./state.ts";
 
 export interface DashboardSnapshot {
   cwd: string;
@@ -11,6 +11,8 @@ export interface DashboardSnapshot {
   git: GitInfoState;
   metrics: SessionMetricsSnapshot;
   workflows: WorkflowInfoState;
+  directAgents: DirectAgentInfoState;
+  attention: number;
 }
 
 function formatTokens(tokens: number): string {
@@ -52,14 +54,23 @@ function gitSummary(git: GitInfoState): string {
 }
 
 function orchestration(snapshot: DashboardSnapshot, theme: Theme): string {
-  const agents = Math.max(snapshot.metrics.runningSubagents, snapshot.workflows.runningAgents);
-  const agentText = agents > 0 ? `${agents} ${agents === 1 ? "agent" : "agents"}` : "";
-  if (snapshot.workflows.active === 0) return agentText ? theme.fg("accent", `● ${agentText}`) : "";
-
-  const workflowText = snapshot.workflows.active === 1 && snapshot.workflows.name
-    ? `${snapshot.workflows.name}${snapshot.workflows.completed !== undefined && snapshot.workflows.total !== undefined ? ` ${snapshot.workflows.completed}/${snapshot.workflows.total}` : ""}`
-    : `${snapshot.workflows.active} workflows`;
-  return theme.fg("accent", `● ${agentText ? `${agentText} · ` : ""}${workflowText}`);
+  // Workflow Pi nodes are also present on the package event surface, so take
+  // the larger count before adding the independent direct-agent registry.
+  const agents = Math.max(snapshot.metrics.runningSubagents, snapshot.workflows.runningAgents)
+    + snapshot.directAgents.runningAgents;
+  const attention = Math.max(snapshot.attention, snapshot.workflows.attention ?? 0)
+    + (snapshot.directAgents.attention ?? 0);
+  const parts: string[] = [];
+  if (agents > 0) parts.push(`${agents} ${agents === 1 ? "agent" : "agents"}`);
+  if (snapshot.workflows.active > 0) {
+    parts.push(snapshot.workflows.active === 1 && snapshot.workflows.name
+      ? `${snapshot.workflows.name}${snapshot.workflows.completed !== undefined && snapshot.workflows.total !== undefined ? ` ${snapshot.workflows.completed}/${snapshot.workflows.total}` : ""}`
+      : `${snapshot.workflows.active} workflows`);
+  } else if ((snapshot.workflows.paused ?? 0) > 0) {
+    parts.push(`${snapshot.workflows.paused} ${snapshot.workflows.paused === 1 ? "workflow" : "workflows"} paused`);
+  }
+  if (attention > 0) parts.push(`${attention} attention`);
+  return parts.length > 0 ? theme.fg(attention > 0 ? "warning" : "accent", `● ${parts.join(" · ")}`) : "";
 }
 
 export function renderFooter(snapshot: DashboardSnapshot, footerData: ReadonlyFooterDataProvider, theme: Theme, width: number): string[] {

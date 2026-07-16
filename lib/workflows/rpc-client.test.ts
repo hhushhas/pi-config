@@ -39,6 +39,23 @@ test("RPC client accepts only the complete workflow protocol v2 contract", async
   rejected.dispose();
 });
 
+test("RPC client routes explicit external harness operations to the durable backend channel", async () => {
+  const events = new FakeEvents();
+  let observedEvent = "";
+  events.emit = function emit(event: string, value: unknown): void {
+    for (const handler of [...(this.handlers.get(event) ?? [])]) handler(value);
+    if (event !== "subagents:workflow-backend:v1:request") return;
+    observedEvent = event;
+    const request = value as Record<string, unknown>;
+    this.emit(`subagents:workflow-backend:v1:reply:${String(request.requestId)}`, { version: 2, requestId: request.requestId, success: true, data: { runId: "external", asyncDir: "/runs/external" } });
+  };
+  const client = new SubagentRpcClient(events as never);
+  const result = await client.spawn({ harness: "codex" }, "request");
+  assert.equal(observedEvent, "subagents:workflow-backend:v1:request");
+  assert.equal(result.runId, "external");
+  client.dispose();
+});
+
 test("RPC client surfaces structured runtime errors", async () => {
   const events = new FakeEvents();
   events.emit = function emit(event: string, value: unknown): void {
