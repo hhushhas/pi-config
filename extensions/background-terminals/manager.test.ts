@@ -1,8 +1,8 @@
 /**
  * End-to-end tests: manager behavior through a real ManagedRuntime with real
  * child processes, exactly as the tool handlers drive it. Commands use
- * `node -e` one-liners for portability (node exists on any machine running
- * pi). Tests are event-driven (kill()/nextChange/settle hooks), not
+ * temporary Node scripts for portability (Node exists on any machine running
+ * Pi). Tests are event-driven (kill()/nextChange/settle hooks), not
  * timing-based.
  */
 
@@ -25,11 +25,15 @@ import {
 import { createTerminalRuntime, runTool } from "./src/runtime.ts";
 
 const cwd = process.cwd();
+const scriptDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-bg-test-scripts-"));
+let scriptCounter = 0;
+test.after(() => fs.rmSync(scriptDir, { recursive: true, force: true }));
 
-/** Encode the script so the same command survives both sh and cmd.exe quoting. */
+/** Use a script file so the same command survives both sh and cmd.exe quoting. */
 function nodeCmd(script: string) {
-  const encoded = Buffer.from(script, "utf8").toString("base64");
-  return `node -e "eval(Buffer.from('${encoded}','base64').toString())"`;
+  const file = path.join(scriptDir, `script-${++scriptCounter}.cjs`);
+  fs.writeFileSync(file, script, "utf8");
+  return `node ${JSON.stringify(file)}`;
 }
 
 async function withManager(
@@ -105,7 +109,7 @@ test("happy path: stdout and stderr captured separately, settles done, hook fire
     );
     assert.equal(snap.status, "running");
     assert.ok(snap.pid);
-    assert.equal(snap.command.includes("Buffer.from"), true);
+    assert.equal(snap.command.includes("script-"), true);
 
     const { snap: done } = await settlement(manager, snap.id);
     assert.equal(done.status, "done");
