@@ -96,6 +96,7 @@ class FakeRpc implements WorkflowRpc {
       kind: params.sourceRunId ? "resume" : "spawn",
       provenance: params.provenance,
       effectiveExecution: {
+        ...(params.harness ? { harness: params.harness } : {}),
         agent: params.agent,
         cwd: params.cwd,
         ...(params.model ? { model: params.model } : {}),
@@ -128,6 +129,29 @@ async function harness(prefix: string, concurrency = 2, notice: (message: string
   return { root, project, rpc, store, scheduler };
 }
 
+test("persists and dispatches an explicit external harness without Pi model rewriting", async () => {
+  const h = await harness("pi-dag-harness-");
+  try {
+    const workflow = await h.scheduler.create({ name: "cross harness", nodes: [
+      { id: "build", harness: "codex", agent: "worker", task: "build", model: "gpt-5.6-codex", thinking: "high" },
+      { id: "review", harness: "claude", agent: "reviewer", task: "review", dependsOn: ["build"] },
+    ] });
+    const launch = h.rpc.launches[0]!;
+    assert.equal(launch.params.harness, "codex");
+    assert.equal(launch.params.model, "gpt-5.6-codex");
+    assert.equal(launch.params.thinking, "high");
+    const attempt = workflow.nodes.build.attempts[0]!;
+    assert.equal(attempt.kind === "legacy" ? undefined : attempt.expectedExecution.harness, "codex");
+    assert.equal(attempt.kind === "legacy" ? undefined : attempt.expectedExecution.model, "gpt-5.6-codex");
+    await h.rpc.finish("run-1", "completed");
+    await h.scheduler.tick();
+    assert.equal(workflow.nodes.build.status, "succeeded");
+    assert.equal(workflow.nodes.review.status, "running");
+    assert.equal(h.rpc.launches[1]?.params.harness, "claude");
+    assert.equal(workflow.nodes.review.attempts[0]?.dependencyAttemptIds.build, "attempt-1");
+  } finally { h.scheduler.dispose(); await rm(h.root, { recursive: true, force: true }); }
+});
+
 test("launches dependents only after a provenance-backed prerequisite succeeds", async () => {
   const h = await harness("pi-dag-v2-");
   try {
@@ -136,6 +160,7 @@ test("launches dependents only after a provenance-backed prerequisite succeeds",
       { id: "second", agent: "reviewer", task: "second", dependsOn: ["first"] },
     ] });
     assert.deepEqual(h.rpc.launches.map((launch) => launch.params.task), ["first"]);
+    assert.equal(h.rpc.launches[0]?.params.harness, undefined, "legacy Pi RPC wire contract must not receive the additive harness field");
     await h.rpc.finish("run-1", "completed");
     await h.scheduler.tick();
     assert.deepEqual(h.rpc.launches.map((launch) => launch.params.task), ["first", "second"]);

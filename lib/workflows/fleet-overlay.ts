@@ -270,7 +270,7 @@ export class FleetOverlay implements Component {
     const status = effectiveNodeStatus(workflow, node);
     const lines = [
       this.theme.bold(` ${node.spec.label ?? node.spec.id}`),
-      ` ${this.statusColor(status, `${GLYPHS[status]} ${status}`)}${snapshot?.activityState === "needs_attention" ? " · attention" : ""} · ${node.spec.agent}`,
+      ` ${this.statusColor(status, `${GLYPHS[status]} ${status}`)}${snapshot?.activityState === "needs_attention" ? " · attention" : ""} · ${node.spec.harness ?? "pi"}/${node.spec.agent}`,
       ` deps       ${node.spec.dependsOn.join(", ") || "none"}`,
       ` lineage    ${attempt?.kind ?? "none"}${attempt && attempt.kind !== "legacy" && attempt.previousAttemptId ? ` ← ${attempt.previousAttemptId}` : ""}`,
       ` attempts   ${node.attempts.length} recorded · ${Math.max(0, node.attempts.length - 1)} superseded`,

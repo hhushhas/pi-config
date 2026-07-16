@@ -60,6 +60,23 @@ test("live or queued v1 workflows stay observation-only and are not replaced", a
   } finally { await rm(h.root, { recursive: true, force: true }); }
 });
 
+test("additive v2 loading materializes the historical Pi harness contract", async () => {
+  const h = await fixture("pi-store-harness-default-");
+  try {
+    const workflow = run(h.project);
+    workflow.nodes.only.status = "running";
+    workflow.nodes.only.attempts.push({ id: "attempt-1", kind: "initial", launchOperationId: "op", rpcRequestId: "rpc", ownerSessionId: "session", requestedAt: Date.now(), state: "running", sessionRoot: "/tmp/sessions", dependencyAttemptIds: {}, controls: [], runtimeProtocolVersion: 2, artifactVersion: 2, launchLeaseEpoch: 1, expectedExecution: { agent: "worker", cwd: h.project, notificationMode: "event-only" } });
+    workflow.nodes.only.authoritativeAttemptId = "attempt-1";
+    const directory = h.store.workflowDir(workflow.id);
+    await mkdir(directory, { recursive: true });
+    await writeFile(h.store.statePath(workflow.id), JSON.stringify(workflow));
+    const loaded = await h.store.load(workflow.id);
+    assert.equal(loaded?.nodes.only.spec.harness, undefined);
+    const attempt = loaded?.nodes.only.attempts[0];
+    assert.equal(attempt?.kind === "legacy" ? undefined : attempt?.expectedExecution.harness, "pi");
+  } finally { await rm(h.root, { recursive: true, force: true }); }
+});
+
 test("portable locked CAS transactions reject stale writers and lose no increments", async () => {
   const h = await fixture("pi-store-lock-");
   try {

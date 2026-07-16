@@ -34,6 +34,14 @@ function parseV2(value: unknown): WorkflowRun | undefined {
   const workflow = value as unknown as WorkflowRun;
   workflow.notifications ??= [];
   workflow.externalEvidence ??= [];
+  // Harness selection was added additively to schema v2. Keep an omitted
+  // node field omitted for wire compatibility with the historical Pi RPC,
+  // while materializing the default in persisted attempt provenance.
+  for (const node of Object.values(workflow.nodes)) {
+    for (const attempt of node.attempts) {
+      if (attempt.kind !== "legacy") attempt.expectedExecution.harness ??= node.spec.harness ?? "pi";
+    }
+  }
   return workflow;
 }
 

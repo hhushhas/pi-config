@@ -2,6 +2,7 @@
 
 ## 2026-07-16
 
+- Added optional durable workflow node harness selection for Claude Code, Codex, and Grok, with persisted backend operations, cross-process launch and resume reservations, detached artifact-owning runners, authority-routed status, replay-safe causal control journals, pause/resume lineage, restart lookup, bounded results, lifecycle-scoped bridge listeners, backward-compatible Pi defaults, and Fleet/status harness metadata.
 - Reworked `/fleet` into a full-screen responsive workspace: wide terminals keep the workflow-node list and selected-node details side by side, while narrow terminals use list-to-detail drill-down navigation consistent with `/ps`.
 - Converted the live Pi configuration into the versioned `portable-pi-setup` package with an explicit extension, prompt, and skill manifest; machine-relative settings; pinned package and CLI versions; a production shrinkwrap; and a restricted publish allowlist.
 - Added a cross-platform installer that backs up managed live resources, preserves credentials and mutable state, installs real skill files instead of symlinks, and provisions the canonical settings, keybindings, support templates, visual examples, and Reading Room.

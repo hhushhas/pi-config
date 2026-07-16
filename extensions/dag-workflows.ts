@@ -20,8 +20,11 @@ const ThinkingSchema = Type.Union([
 
 const NodeSchema = Type.Object({
   id: Type.String({ description: "Stable node ID used by dependencies." }),
+  harness: Type.Optional(Type.Union([
+    Type.Literal("pi"), Type.Literal("claude"), Type.Literal("codex"), Type.Literal("grok"),
+  ], { description: "Durable node backend. Omit for the compatible Pi role runtime; external harnesses run through the durable workflow backend bridge, never session-local subagent_spawn." })),
   label: Type.Optional(Type.String({ description: "Short human-readable label." })),
-  agent: Type.String({ description: "pi-subagents role, such as worker, scout, reviewer, or delegate." }),
+  agent: Type.String({ description: "Agent role/instruction profile. Pi resolves a pi-subagents role; external harnesses persist the value as execution provenance." }),
   task: Type.String({ description: "Self-contained task brief for this node." }),
   dependsOn: Type.Optional(Type.Array(Type.String(), { description: "Node IDs that must succeed first." })),
   model: Type.Optional(Type.String({ description: "Per-node provider/model override." })),
@@ -160,7 +163,7 @@ export default function (pi: ExtensionAPI) {
     name: "workflow",
     label: "Dependency-aware workflow",
     description:
-      "Create and control durable dependency-aware subagent DAGs. Use only when the user explicitly asks for subagents/orchestration, invokes /orchestrate, or requests a dependency-aware workflow. Independent nodes run concurrently; dependent nodes wait for successful prerequisites.",
+      "Create and control durable dependency-aware agent DAGs across Pi, Claude Code, Codex, and Grok. Set a node harness only for an external backend; omission preserves Pi role execution. All nodes use persisted attempts, idempotent launch lookup, lease fencing, causal controls, and artifact reconciliation; this tool never delegates durable nodes through session-local subagent_spawn. Independent nodes run concurrently; dependent nodes wait for successful authoritative prerequisites.",
     parameters: WorkflowParams,
     async execute(_toolCallId, params) {
       if (!scheduler) {

@@ -22,6 +22,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
@@ -67,6 +68,7 @@ import {
   SUBAGENT_WAIT_TOOL_DESCRIPTION,
 } from "./src/prompt.ts";
 import { createDeferredResultDelivery } from "./src/result-delivery.ts";
+import { DurableWorkflowBackendBridge } from "./src/durable-workflow-backend.ts";
 import {
   createSubagentRuntime,
   runTool,
@@ -126,6 +128,14 @@ function resolveChildProjectTrust(options: {
 }
 
 export default function (pi: ExtensionAPI) {
+  // This bridge is intentionally independent of the session-local manager.
+  // Its detached runners and artifacts remain reconcilable across Pi restarts.
+  const workflowBackend = new DurableWorkflowBackendBridge(
+    pi.events,
+    path.join(getAgentDir(), "workflow-backends-v1"),
+    fileURLToPath(new URL("./src/workflow-backend-runner.ts", import.meta.url)),
+  );
+
   let runtime: SubagentRuntime | undefined;
   let managerPromise: Promise<SubagentManagerShape> | undefined;
   let sessionContext: ExtensionContext | undefined;
@@ -201,6 +211,11 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.on("session_start", (_event, ctx) => {
+    // Extension reloads can deliver a new start without a prior shutdown.
+    // Rebinding is idempotent and affects only the event listener; detached
+    // artifact-owning runners remain independent.
+    workflowBackend.dispose();
+    workflowBackend.start();
     sessionContext = ctx;
     if (ctx.hasUI) ui = ctx.ui;
   });
@@ -208,6 +223,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("agent_settled", flushResults);
 
   pi.on("session_shutdown", async () => {
+    workflowBackend.dispose();
     sessionContext = undefined;
     resultDelivery.clear();
     unsubStatus?.();
