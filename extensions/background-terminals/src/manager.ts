@@ -173,9 +173,15 @@ export class TerminalManager extends Context.Service<
 function shellInvocation(command: string) {
   if (process.platform === "win32") {
     const shell = process.env.ComSpec ?? "cmd.exe";
-    return { shell, args: ["/d", "/s", "/c", command] };
+    // Match Node's exec() quoting contract: /s requires one outer quote pair,
+    // and verbatim arguments prevent spawn() from escaping that pair again.
+    return {
+      shell,
+      args: ["/d", "/s", "/c", `"${command}"`],
+      windowsVerbatimArguments: true,
+    };
   }
-  return { shell: "/bin/sh", args: ["-c", command] };
+  return { shell: "/bin/sh", args: ["-c", command], windowsVerbatimArguments: false };
 }
 
 /** Signal Pi's launched process group on POSIX. Windows uses taskkill /T.
@@ -551,7 +557,7 @@ const makeManager = Effect.gen(function* () {
       );
 
       const doStart = Effect.gen(function* () {
-        const { shell, args } = shellInvocation(options.command);
+        const { shell, args, windowsVerbatimArguments } = shellInvocation(options.command);
         const child = yield* Effect.try({
           try: () =>
             spawn(shell, args, {
@@ -562,6 +568,7 @@ const makeManager = Effect.gen(function* () {
               stdio: ["ignore", "pipe", "pipe"],
               // Own process group on POSIX; new-session daemons are outside it.
               detached: process.platform !== "win32",
+              windowsVerbatimArguments: process.platform === "win32" && windowsVerbatimArguments,
             }),
           catch: (error) => new SpawnError({ message: boundedError(error) }),
         });
