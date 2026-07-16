@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chalk — the life of one lease</title>
+<style>
+  :root {
+    --bg: #faf9f7; --fg: #37352f; --muted: #9b9a97; --line: #e8e6e1;
+    --card: #f3f1ec; --accent: #2383e2; --amber: #d9730d; --green: #448361; --red: #d44c47;
+    --glow: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #191919; --fg: #e3e2e0; --muted: #9b9b9b; --line: #2f2f2f;
+      --card: #232323; --accent: #529cca; --amber: #cb7b37; --green: #4f9768; --red: #de5550;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg); margin: 0; -webkit-font-smoothing: antialiased;
+    font: 16px/1.65 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  main { display: grid; grid-template-columns: 1fr min(720px, calc(100% - 3rem)) 1fr; padding: 3rem 0 6rem; }
+  main > * { grid-column: 2; min-width: 0; }
+  h1 { font-size: 1.75rem; font-weight: 600; line-height: 1.3; margin: 0 0 .5rem; }
+  .kicker { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 .25rem; }
+  .caption { color: var(--muted); font-size: .85rem; }
+  .badge { display: inline-block; padding: .1rem .6rem; border-radius: 999px; font-size: .75rem; border: 1px solid var(--line); color: var(--muted); vertical-align: middle; }
+  .badge.accent { color: var(--accent); border-color: var(--accent); }
+  button { font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: .35rem .9rem; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .icon { width: 1.1em; height: 1.1em; vertical-align: -.18em; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .term { position: relative; border-bottom: 1px dotted var(--muted); cursor: help; }
+  .term:hover::after, .term:focus::after {
+    content: attr(data-def); position: absolute; left: 0; top: calc(100% + 4px); z-index: 30;
+    width: max-content; max-width: 320px; padding: .5rem .75rem; font-size: .85rem; line-height: 1.4;
+    background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.15);
+  }
+
+  /* ---------- lifecycle stage ---------- */
+  .fullbleed {
+    grid-column: 1 / -1; width: 100%; padding: 2.5rem clamp(1rem, 3vw, 3rem) 3rem;
+    background: var(--card);
+    background-image: radial-gradient(color-mix(in srgb, var(--muted) 20%, transparent) 1px, transparent 1px);
+    background-size: 24px 24px;
+    border-block: 1px solid var(--line);
+  }
+  :fullscreen { background: var(--bg); overflow-y: auto; }
+  .life-head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; max-width: 1240px; margin: 0 auto 1.25rem; }
+  .life-head .spacer { flex: 1; }
+  .life-head .grouplabel { font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-right: .1rem; }
+
+  /* moment card */
+  .moment {
+    max-width: 1240px; margin: 0 auto 1.5rem; display: grid; grid-template-columns: 1fr auto;
+    gap: 1.5rem; align-items: center; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 12px; padding: 1.25rem 1.5rem; min-height: 172px;
+  }
+  @media (max-width: 720px) { .moment { grid-template-columns: 1fr; } }
+  .moment .statebadge {
+    display: inline-flex; align-items: center; gap: .4rem; padding: .15rem .7rem; border-radius: 999px;
+    font-size: .78rem; font-weight: 600; border: 1.5px solid; margin-bottom: .5rem;
+  }
+  .statebadge.ok { color: var(--green); border-color: var(--green); }
+  .statebadge.warn { color: var(--amber); border-color: var(--amber); }
+  .statebadge.bad { color: var(--red); border-color: var(--red); }
+  .statebadge.calm { color: var(--muted); border-color: var(--line); }
+  .statebadge.new { color: var(--accent); border-color: var(--accent); }
+  .moment h3 { margin: 0 0 .35rem; font-size: 1.15rem; }
+  .moment p { margin: 0; max-width: 56ch; }
+  .moment .stats { display: flex; gap: 1.25rem; margin-top: .8rem; flex-wrap: wrap; }
+  .moment .stat { font-size: .82rem; color: var(--muted); }
+  .moment .stat b { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .moment .stat b.hot { color: var(--red); }
+  .picto { width: 190px; height: 190px; justify-self: center; }
+  .picto .machine { fill: var(--card); stroke: var(--fg); stroke-width: 2; }
+  .picto .machine.off { stroke: var(--muted); stroke-dasharray: 4 4; }
+  .picto .mline { stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
+  .picto .led { fill: var(--green); }
+  .picto .led.dead { fill: var(--red); }
+  .picto .ringbg { fill: none; stroke: var(--line); stroke-width: 7; }
+  .picto .ring { fill: none; stroke-width: 7; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 95px 95px; transition: stroke-dashoffset .2s linear; }
+  .picto .ring.ok { stroke: var(--green); }
+  .picto .ring.warn { stroke: var(--amber); }
+  .picto .ring.bad { stroke: var(--red); }
+  .picto .remain { font-size: 13px; font-weight: 650; fill: var(--fg); text-anchor: middle; font-variant-numeric: tabular-nums; }
+  .picto .remain.sub { font-size: 9.5px; font-weight: 400; fill: var(--muted); }
+  .picto .noring { font-size: 10.5px; fill: var(--muted); text-anchor: middle; }
+
+  /* timeline ribbon */
+  .stagewrap { position: relative; max-width: 1240px; margin: 0 auto; }
+  svg#ribbon { display: block; width: 100%; height: auto; cursor: crosshair; touch-action: none; }
+  svg#ribbon:focus { outline: none; }
+  svg#ribbon:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 8px; }
+  .rail { fill: none; stroke-width: 6; stroke-linecap: round; }
+  .rail.ok { stroke: var(--green); }
+  .rail.warn { stroke: var(--amber); }
+  .rail.bad { stroke: var(--red); }
+  .rail.calm { stroke: var(--muted); }
+  .rail.zombie { stroke: var(--red); stroke-dasharray: 3 9; }
+  .ghosted { opacity: .16; }
+  .beat { fill: none; stroke: var(--green); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .beat.late { stroke: var(--accent); }
+  .enddot { stroke-width: 2.5; }
+  .enddot.ok { fill: var(--green); stroke: var(--green); }
+  .enddot.new { fill: var(--bg); stroke: var(--accent); filter: drop-shadow(0 0 5px var(--glow)); }
+  .xmark { stroke: var(--red); stroke-width: 3; stroke-linecap: round; }
+  .rlabel { font-size: 12.5px; font-weight: 550; fill: var(--fg); }
+  .rlabel.sub { font-weight: 400; fill: var(--muted); font-size: 11px; }
+  .rlabel.new { fill: var(--accent); }
+  .axis { stroke: var(--line); stroke-width: 1; }
+  .axis-t { font-size: 10.5px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+  .chapter { cursor: pointer; }
+  .chapter circle { fill: var(--bg); stroke: var(--muted); stroke-width: 2; }
+  .chapter:hover circle, .chapter:focus circle { stroke: var(--fg); stroke-width: 3; }
+  .chapter:focus { outline: none; }
+  .chapter text { font-size: 11.5px; fill: var(--muted); text-anchor: middle; }
+  .playhead line { stroke: var(--fg); stroke-width: 1.5; opacity: .5; }
+  .playhead circle { fill: var(--fg); stroke: var(--bg); stroke-width: 2.5; }
+  .playhead text { font-size: 11px; font-weight: 650; fill: var(--bg); text-anchor: middle; font-variant-numeric: tabular-nums; }
+  .playhead rect { fill: var(--fg); rx: 4; }
+  .infin { font-size: 16px; fill: var(--red); font-weight: 600; }
+
+  .legend { max-width: 1240px; margin: 1rem auto 0; display: flex; gap: 1.4rem; flex-wrap: wrap; font-size: .8rem; color: var(--muted); }
+  .legend i { display: inline-block; width: 1.1rem; height: .28rem; border-radius: 2px; vertical-align: middle; margin-right: .35rem; }
+  .legend .zi { background: repeating-linear-gradient(90deg, var(--red) 0 3px, transparent 3px 8px); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 3H3v6M15 3h6v6M9 21H3v-6M15 21h6v-6"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+  <symbol id="i-restart" viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 2 6M4 10V4m0 6h6"/></symbol>
+</svg>
+
+<main>
+  <p class="kicker">System lifecycle · example artifact</p>
+  <h1>Chalk — the life of one lease</h1>
+  <p>
+    Same system, seen through time. This follows <b>one</b>
+    <span class="term" tabindex="0" data-def="A short-lived written claim: 'this cloud machine is spoken for, for the next 60 seconds.' It must be refreshed to stay alive.">lease</span>
+    from the moment a call books a cloud machine to the moment that machine is returned — including the fork in the road
+    where things go wrong, and the two very different endings that can follow.
+  </p>
+  <p class="caption">
+    Drag the playhead (or press play) to move through the story · pick an ending on the fork ·
+    flip <b>Before the change</b> to watch the old world, where a crashed call held its machine forever.
+  </p>
+</main>
+
+<section class="fullbleed" id="life">
+  <div class="life-head">
+    <span class="grouplabel">Ending</span>
+    <button id="endA" aria-pressed="false">the heartbeat returns</button>
+    <button id="endB" aria-pressed="true">the silence continues</button>
+    <span class="spacer"></span>
+    <button id="beforeBtn" aria-pressed="false">Before the change</button>
+    <button id="playBtn"><svg class="icon"><use href="#i-play"/></svg> <span>Play</span></button>
+    <button data-fullscreen="#life" title="Fullscreen"><svg class="icon"><use href="#i-expand"/></svg></button>
+  </div>
+
+  <div class="moment" aria-live="polite">
+    <div>
+      <span class="statebadge ok" id="mBadge">Alive</span>
+      <h3 id="mTitle">—</h3>
+      <p id="mText">—</p>
+      <div class="stats">
+        <span class="stat">clock <b id="mClock">0:00</b></span>
+        <span class="stat">machine cost so far <b id="mCost">$0.00</b></span>
+        <span class="stat" id="mExtraWrap" hidden><b id="mExtra" class="hot"></b></span>
+      </div>
+    </div>
+    <svg class="picto" viewBox="0 0 190 190" aria-hidden="true">
+      <circle class="ringbg" id="ringBg" cx="95" cy="95" r="72"/>
+      <circle class="ring ok" id="ring" cx="95" cy="95" r="72"/>
+      <g id="machineG">
+        <rect class="machine" id="machineBox" x="60" y="62" width="70" height="56" rx="8"/>
+        <line class="mline" x1="72" y1="78" x2="105" y2="78"/>
+        <line class="mline" x1="72" y1="90" x2="118" y2="90"/>
+        <line class="mline" x1="72" y1="102" x2="96" y2="102"/>
+        <circle class="led" id="led" cx="117" cy="76" r="3.5"/>
+      </g>
+      <text class="remain" id="remainT" x="95" y="141">60s</text>
+      <text class="remain sub" id="remainSub" x="95" y="155">lease remaining</text>
+    </svg>
+  </div>
+
+  <div class="stagewrap">
+    <svg id="ribbon" viewBox="0 0 1240 250" tabindex="0" role="application"
+         aria-label="Timeline of one lease. Use left and right arrow keys to move through time."></svg>
+  </div>
+
+  <div class="legend">
+    <span><i style="background:var(--green)"></i> safely held — heartbeats arriving</span>
+    <span><i style="background:var(--amber)"></i> draining — no one is refreshing it</span>
+    <span><i style="background:var(--red)"></i> expired — the safety net fires</span>
+    <span><i class="zi"></i> the old world's zombie — booked forever</span>
+  </div>
+</section>
+
+<main>
+  <p class="caption">
+    Example artifact · the third of three system views: the <b>atlas</b> answers “where does this live?”,
+    the <b>metro map</b> answers “what happens differently now?”, and this <b>lifecycle</b> answers
+    “what happens to one thing over time — and where can it die?”
+  </p>
+</main>
+
+<script>
+  /* ---------- time & geometry ---------- */
+  const X = (t) => 60 + t * 6;              // t seconds -> x px (t: 0..185)
+  const Y_MAIN = 130, Y_A = 66, Y_B = 194;
+  const T_CRASH = 95, T_RETURN = 112, T_EXPIRE = 140, T_RECLAIM = 145, T_CALLEND = 170, T_ZMAX = 185;
+  const BEATS_BASE = [0, 20, 40, 60, 80];
+  const BEATS_A = [112, 132, 152];
+  const TTL = 60, RATE = 0.005; // $ per second
+
+  let world = "after";   // "after" | "before"
+  let branch = "B";      // "A" heartbeat returns | "B" silence continues
+  let t = 0, playing = false, raf = null, lastTs = 0;
+
+  const tEnd = () => world === "before" ? T_ZMAX : branch === "A" ? T_CALLEND : T_RECLAIM;
+
+  const svg = document.getElementById("ribbon");
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (name, attrs, text) => {
+    const n = document.createElementNS(NS, name);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (text != null) n.textContent = text;
+    return n;
+  };
+  const g = (cls) => el("g", cls ? { class: cls } : {});
+
+  /* ---------- draw the ribbon (static per world/branch) ---------- */
+  function drawRibbon() {
+    svg.textContent = "";
+
+    // time axis
+    const ax = g();
+    ax.appendChild(el("line", { class: "axis", x1: X(0), y1: 236, x2: X(T_ZMAX), y2: 236 }));
+    for (const s of [0, 30, 60, 90, 120, 150, 180]) {
+      ax.appendChild(el("line", { class: "axis", x1: X(s), y1: 232, x2: X(s), y2: 240 }));
+      ax.appendChild(el("text", { class: "axis-t", x: X(s) - 8, y: 226 }, s === 0 ? "0s" : s + "s"));
+    }
+    svg.appendChild(ax);
+
+    const rails = g();
+    // shared healthy stretch
+    rails.appendChild(el("line", { class: "rail ok", x1: X(0), y1: Y_MAIN, x2: X(T_CRASH), y2: Y_MAIN }));
+    for (const b of BEATS_BASE) rails.appendChild(beat(X(b), Y_MAIN, false));
+    rails.appendChild(label(X(2), Y_MAIN - 46, "born", "a call books a machine — the lease is written"));
+
+    if (world === "before") {
+      const z = el("line", { class: "rail zombie", x1: X(T_CRASH), y1: Y_MAIN, x2: X(T_ZMAX) + 6, y2: Y_MAIN });
+      rails.appendChild(z);
+      rails.appendChild(el("text", { class: "infin", x: X(T_ZMAX) + 12, y: Y_MAIN + 6 }, "∞"));
+      rails.appendChild(label(X(T_CRASH) + 4, Y_MAIN + 30, "the crash", "the engine dies — and nothing is watching"));
+      rails.appendChild(label(X(150), Y_MAIN - 30, "the zombie", "still booked, still billing, forever"));
+    } else {
+      // fork curves
+      const forkA = `M ${X(T_CRASH)} ${Y_MAIN} C ${X(T_CRASH) + 45} ${Y_MAIN}, ${X(T_RETURN) - 45} ${Y_A}, ${X(T_RETURN)} ${Y_A}`;
+      const forkB = `M ${X(T_CRASH)} ${Y_MAIN} C ${X(T_CRASH) + 45} ${Y_MAIN}, ${X(T_RETURN) - 45} ${Y_B}, ${X(T_RETURN)} ${Y_B}`;
+
+      const gA = g(branch === "A" ? "" : "ghosted");
+      gA.appendChild(el("path", { class: "rail warn", d: forkA }));
+      gA.appendChild(el("line", { class: "rail ok", x1: X(T_RETURN), y1: Y_A, x2: X(T_CALLEND), y2: Y_A }));
+      for (const b of BEATS_A) gA.appendChild(beat(X(b), Y_A, true));
+      gA.appendChild(el("circle", { class: "enddot ok", cx: X(T_CALLEND), cy: Y_A, r: 7 }));
+      gA.appendChild(label(X(T_RETURN) - 6, Y_A - 32, "the heartbeat returns", "the engine restarts in time — the lease refills"));
+      gA.appendChild(label(X(T_CALLEND) - 118, Y_A + 26, "call ends — machine returned ✓", null));
+      svg.appendChild(gA);
+
+      const gB = g(branch === "B" ? "" : "ghosted");
+      gB.appendChild(el("path", { class: "rail warn", d: forkB }));
+      gB.appendChild(el("line", { class: "rail warn", x1: X(T_RETURN), y1: Y_B, x2: X(T_EXPIRE), y2: Y_B }));
+      gB.appendChild(el("line", { class: "rail calm", x1: X(T_EXPIRE), y1: Y_B, x2: X(T_RECLAIM), y2: Y_B }));
+      gB.appendChild(el("line", { class: "xmark", x1: X(T_EXPIRE) - 6, y1: Y_B - 6, x2: X(T_EXPIRE) + 6, y2: Y_B + 6 }));
+      gB.appendChild(el("line", { class: "xmark", x1: X(T_EXPIRE) - 6, y1: Y_B + 6, x2: X(T_EXPIRE) + 6, y2: Y_B - 6 }));
+      gB.appendChild(el("circle", { class: "enddot new", cx: X(T_RECLAIM), cy: Y_B, r: 7 }));
+      gB.appendChild(label(X(125), Y_B - 34, "the silence continues", "no heartbeat — the lease drains to zero"));
+      const nl = label(X(T_RECLAIM) + 14, Y_B - 2, "the safety net fires", "machine returned to the pool");
+      nl.querySelector("text").classList.add("new");
+      gB.appendChild(nl);
+      svg.appendChild(gB);
+
+      rails.appendChild(label(X(T_CRASH) - 24, Y_MAIN + 30, "the crash", "heartbeats stop — the fork in the road"));
+    }
+    svg.appendChild(rails);
+
+    // clickable chapters
+    const chapters = world === "before"
+      ? [[0, "born"], [45, "working"], [T_CRASH, "the crash"], [150, "the zombie"]]
+      : [[0, "born"], [45, "working"], [T_CRASH, "the crash"], [branch === "A" ? T_CALLEND : T_RECLAIM, "the ending"]];
+    const ch = g();
+    for (const [ct, name] of chapters) {
+      const c = g("chapter");
+      c.setAttribute("tabindex", "0");
+      c.setAttribute("role", "button");
+      c.setAttribute("aria-label", "jump to: " + name);
+      c.appendChild(el("circle", { cx: X(ct), cy: 246, r: 4.5 }));
+      c.appendChild(el("text", { x: X(ct), y: 262 }, name));
+      const go = () => { setTime(ct + 0.01); pause(); };
+      c.addEventListener("click", go);
+      c.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+      ch.appendChild(c);
+    }
+    svg.setAttribute("viewBox", "0 0 1240 272");
+    svg.appendChild(ch);
+
+    // playhead on top
+    const ph = g("playhead");
+    ph.id = "playhead";
+    ph.appendChild(el("line", { x1: 0, y1: 34, x2: 0, y2: 216 }));
+    ph.appendChild(el("rect", { x: -21, y: 8, width: 42, height: 20 }));
+    ph.appendChild(el("text", { x: 0, y: 22 }, "0:00"));
+    ph.appendChild(el("circle", { cx: 0, cy: Y_MAIN, r: 8 }));
+    svg.appendChild(ph);
+  }
+
+  function beat(x, y, late) {
+    return el("path", { class: "beat" + (late ? " late" : ""), d: `M ${x - 9} ${y} l 4 0 l 2 -10 l 4 15 l 2 -5 l 4 0` });
+  }
+  function label(x, y, main, sub) {
+    const grp = g();
+    grp.appendChild(el("text", { class: "rlabel", x, y }, main));
+    if (sub) grp.appendChild(el("text", { class: "rlabel sub", x, y: y + 15 }, sub));
+    return grp;
+  }
+
+  /* ---------- state model: everything derives from t ---------- */
+  const yOf = (tt) => {
+    if (world === "before" || tt <= T_CRASH) return Y_MAIN;
+    const yTo = branch === "A" ? Y_A : Y_B;
+    if (tt >= T_RETURN) return yTo;
+    return Y_MAIN + (yTo - Y_MAIN) * (tt - T_CRASH) / (T_RETURN - T_CRASH);
+  };
+
+  function leaseRemaining(tt) {
+    if (world === "before") return null; // no lease existed
+    const beats = branch === "A" ? BEATS_BASE.concat(BEATS_A) : BEATS_BASE;
+    let last = 0;
+    for (const b of beats) if (b <= tt) last = b;
+    return Math.max(0, last + TTL - tt);
+  }
+
+  function momentFor(tt) {
+    const alive = { badge: ["Alive", "ok"], title: "Heartbeats keep the claim fresh",
+      text: "Every 20 seconds the call engine sends a heartbeat — “still here” — and the lease refills to a full 60 seconds. As long as the beats keep arriving, the machine is safely held." };
+    if (tt < 2) return { badge: ["Born", "calm"], title: "A call books a machine",
+      text: "Someone clicks Join. Chalk borrows a cloud machine for the call, and the lease keeper writes a lease: this machine is spoken for — for the next 60 seconds." };
+    if (tt <= T_CRASH) return alive;
+    if (world === "before") return { badge: ["Zombie", "bad"], title: "Crashed — and nobody is watching",
+      text: "The call engine dies mid-call, and that is the end of the story. Nothing notices. The machine stays booked and billing, day after day, until a human stumbles on it. This is the problem the lease keeper was built to fix." };
+    if (branch === "A") {
+      if (tt >= T_CALLEND) return { badge: ["Done", "calm"], title: "A quiet, ordinary ending",
+        text: "The call finishes normally. The engine lets go of the lease on purpose, and the machine goes back to the cloud pool. The safety net was never needed — but it was armed the whole time." };
+      if (tt >= T_RETURN) return { badge: ["Saved", "ok"], title: "Back before the lease ran dry",
+        text: "The engine restarts and its heartbeat arrives with time to spare. The lease refills, the call carries on, and no caller ever knows anything happened." };
+      return { badge: ["Shaky", "warn"], title: "The heartbeats have stopped",
+        text: "The call engine just crashed. No one is refreshing the lease anymore — it is quietly draining toward zero. Two futures are possible from here." };
+    }
+    if (tt >= T_RECLAIM) return { badge: ["Reclaimed", "new"], title: "The safety net did its job",
+      text: "The book-keeper has returned the machine to the cloud pool and closed the books. Total loss: about a minute of idle machine time — instead of weeks." };
+    if (tt >= T_EXPIRE) return { badge: ["Expired", "bad"], title: "The lease hits zero",
+      text: "Sixty seconds of silence — that's the deal. The expiry clock fires, the lease is declared dead, and the book-keeper starts returning the machine. No human involved." };
+    return { badge: ["Shaky", "warn"], title: "The heartbeats have stopped",
+      text: "The call engine just crashed. No one is refreshing the lease anymore — it is quietly draining toward zero. Two futures are possible from here." };
+  }
+
+  /* ---------- render current moment ---------- */
+  const $ = (id) => document.getElementById(id);
+  const fmt = (s) => Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
+  const RING_C = 2 * Math.PI * 72;
+  $("ring").setAttribute("stroke-dasharray", RING_C);
+
+  function render() {
+    // playhead
+    const ph = $("playhead");
+    ph.setAttribute("transform", `translate(${X(t)} 0)`);
+    ph.querySelector("circle").setAttribute("cy", yOf(t));
+    ph.querySelector("text").textContent = fmt(t);
+
+    // moment card
+    const m = momentFor(t);
+    const badge = $("mBadge");
+    badge.textContent = m.badge[0];
+    badge.className = "statebadge " + m.badge[1];
+    $("mTitle").textContent = m.title;
+    $("mText").textContent = m.text;
+    $("mClock").textContent = fmt(t);
+
+    const billedUntil = world === "before" ? t : Math.min(t, branch === "A" ? T_CALLEND : T_RECLAIM);
+    $("mCost").textContent = "$" + (billedUntil * RATE).toFixed(2);
+    const zombie = world === "before" && t > T_CRASH;
+    $("mExtraWrap").hidden = !zombie;
+    if (zombie) $("mExtra").textContent = "…and counting — ≈ $" + (86400 * RATE).toFixed(0) + " every day it goes unnoticed";
+
+    // pictogram
+    const rem = leaseRemaining(t);
+    const ring = $("ring"), led = $("led"), box = $("machineBox");
+    const dead = world === "after" && branch === "B" && t >= T_RECLAIM;
+    const done = world === "after" && branch === "A" && t >= T_CALLEND;
+    box.classList.toggle("off", dead || done);
+    led.classList.toggle("dead", zombie || (world === "after" && branch === "B" && t > T_CRASH && !dead));
+    led.style.opacity = dead || done ? 0 : 1;
+
+    if (rem == null) { // before-world: no lease at all
+      ring.style.opacity = 0; $("ringBg").style.opacity = .35;
+      $("remainT").textContent = "no lease";
+      $("remainSub").textContent = "nothing is counting down";
+    } else if (dead || done) {
+      ring.style.opacity = 0; $("ringBg").style.opacity = .35;
+      $("remainT").textContent = done ? "released" : "returned";
+      $("remainSub").textContent = done ? "let go on purpose" : "taken back by the safety net";
+    } else {
+      ring.style.opacity = 1; $("ringBg").style.opacity = 1;
+      const frac = Math.min(1, rem / TTL);
+      ring.setAttribute("stroke-dashoffset", RING_C * (1 - frac));
+      ring.setAttribute("class", "ring " + (rem > 20 ? "ok" : rem > 0 ? "warn" : "bad"));
+      $("remainT").textContent = Math.ceil(rem) + "s";
+      $("remainSub").textContent = "lease remaining";
+    }
+  }
+
+  function setTime(nt) { t = Math.max(0, Math.min(tEnd(), nt)); render(); }
+
+  /* ---------- play / pause ---------- */
+  const playBtn = $("playBtn");
+  function pause() {
+    playing = false; if (raf) cancelAnimationFrame(raf);
+    playBtn.querySelector("use").setAttribute("href", "#i-play");
+    playBtn.querySelector("span").textContent = "Play";
+  }
+  function play() {
+    if (t >= tEnd()) t = 0;
+    playing = true; lastTs = 0;
+    playBtn.querySelector("use").setAttribute("href", "#i-pause");
+    playBtn.querySelector("span").textContent = "Pause";
+    const step = (ts) => {
+      if (!playing) return;
+      if (lastTs) setTime(t + (ts - lastTs) / 1000 * 9); // 9x speed
+      lastTs = ts;
+      if (t >= tEnd()) { pause(); return; }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+  }
+  playBtn.addEventListener("click", () => playing ? pause() : play());
+
+  /* ---------- scrubbing ---------- */
+  function seekFromEvent(e) {
+    const r = svg.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width * 1240;
+    setTime((px - 60) / 6);
+  }
+  let dragging = false;
+  svg.addEventListener("pointerdown", (e) => {
+    if (e.target.closest(".chapter")) return;
+    dragging = true; svg.setPointerCapture(e.pointerId); pause(); seekFromEvent(e);
+  });
+  svg.addEventListener("pointermove", (e) => { if (dragging) seekFromEvent(e); });
+  svg.addEventListener("pointerup", () => { dragging = false; });
+  svg.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight") { e.preventDefault(); pause(); setTime(t + 5); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); pause(); setTime(t - 5); }
+    else if (e.key === "Home") { e.preventDefault(); pause(); setTime(0); }
+    else if (e.key === "End") { e.preventDefault(); pause(); setTime(tEnd()); }
+  });
+
+  /* ---------- mode switches ---------- */
+  const endA = $("endA"), endB = $("endB"), beforeBtn = $("beforeBtn");
+  function setBranch(b) {
+    branch = b;
+    endA.setAttribute("aria-pressed", b === "A");
+    endB.setAttribute("aria-pressed", b === "B");
+    pause(); drawRibbon(); setTime(Math.min(t, tEnd()));
+  }
+  endA.addEventListener("click", () => setBranch("A"));
+  endB.addEventListener("click", () => setBranch("B"));
+  beforeBtn.addEventListener("click", () => {
+    world = world === "after" ? "before" : "after";
+    beforeBtn.setAttribute("aria-pressed", world === "before");
+    endA.disabled = endB.disabled = world === "before";
+    pause(); drawRibbon(); setTime(Math.min(t, tEnd()));
+  });
+
+  /* ---------- fullscreen ---------- */
+  document.querySelectorAll("[data-fullscreen]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const target = document.querySelector(b.dataset.fullscreen);
+      document.fullscreenElement ? document.exitFullscreen() : target.requestFullscreen();
+    })
+  );
+
+  drawRibbon();
+  setTime(0);
+</script>
+</body>
+</html>

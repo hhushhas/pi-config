@@ -1,0 +1,101 @@
+/**
+ * Pure utility functions for auto-name extension.
+ * Extracted for testability — no I/O, no pi SDK dependencies.
+ */
+
+import * as os from "node:os";
+import * as path from "node:path";
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+/** Must match subagent/session.ts:SUBAGENT_SESSION_DIR */
+const AGENT_DIR = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");
+export const SUBAGENT_SESSION_DIR = path.join(AGENT_DIR, "sessions", "subagents");
+
+export const NAME_SYSTEM_PROMPT =
+	"Name the session from the user's message in concise English, using at most six words. Output only the name: no quotes, punctuation, explanation, or extra text.";
+
+/** Max chars for the user message sent to the LLM. */
+export const MAX_MESSAGE_LENGTH = 500;
+
+/** Max chars for the resulting session name. */
+export const MAX_NAME_LENGTH = 30;
+
+/** Max chars shown in the status bar. */
+export const MAX_STATUS_CHARS = 90;
+
+/** Only a fully completed response should be used as a session name. */
+export const SUCCESSFUL_STOP_REASON = "stop";
+
+// ── Pure Functions ───────────────────────────────────────────────────────────
+
+/**
+ * Check if a session file path belongs to the subagent sessions directory.
+ * Returns true if the path starts with SUBAGENT_SESSION_DIR.
+ */
+export function isSubagentSessionPath(sessionFilePath: string | undefined): boolean {
+	if (!sessionFilePath) return false;
+	return (
+		sessionFilePath.startsWith(SUBAGENT_SESSION_DIR + path.sep) ||
+		sessionFilePath.startsWith(`${SUBAGENT_SESSION_DIR}/`)
+	);
+}
+
+/**
+ * Safely extract session file path from an ExtensionContext-like object.
+ * Returns undefined if extraction fails.
+ */
+export function extractSessionFilePath(sessionManager: unknown): string | undefined {
+	try {
+		if (sessionManager && typeof sessionManager === "object" && "getSessionFile" in sessionManager) {
+			const getSessionFile = (sessionManager as Record<string, unknown>).getSessionFile;
+			if (typeof getSessionFile === "function") {
+				const raw = String(getSessionFile() ?? "");
+				const cleaned = raw.replace(/[\r\n\t]+/g, "").trim();
+				return cleaned || undefined;
+			}
+		}
+	} catch {
+		// Ignore errors
+	}
+	return undefined;
+}
+
+/**
+ * Format a session name for status bar display.
+ * Normalizes whitespace and clips to MAX_STATUS_CHARS.
+ */
+export function formatNameStatus(name: string): string {
+	const singleLine = name.replace(/\s+/g, " ").trim();
+	return singleLine.length > MAX_STATUS_CHARS ? `${singleLine.slice(0, MAX_STATUS_CHARS - 1)}…` : singleLine;
+}
+
+/**
+ * Build the user-message text sent to the LLM for name detection.
+ * Truncates to MAX_MESSAGE_LENGTH.
+ */
+export function buildNameContext(userMessage: string): string {
+	return `User message: ${userMessage.slice(0, MAX_MESSAGE_LENGTH)}`;
+}
+
+/**
+ * Check whether a model result completed normally.
+ * Only fully completed responses should be used for session naming.
+ */
+export function isSuccessfulResult(stopReason: string | undefined): boolean {
+	return stopReason === SUCCESSFUL_STOP_REASON;
+}
+
+/**
+ * Extract the session name text from an LLM AssistantMessage-like result.
+ * Filters to text content, joins, trims, and clips to MAX_NAME_LENGTH.
+ */
+export function extractNameFromResult(content: ReadonlyArray<{ type: string; text?: string }>): string {
+	const text = content
+		.filter((c): c is { type: "text"; text: string } => c.type === "text" && typeof c.text === "string")
+		.map((c) => c.text)
+		.join("")
+		.trim();
+
+	return text.slice(0, MAX_NAME_LENGTH);
+}

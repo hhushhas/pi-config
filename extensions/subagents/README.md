@@ -1,6 +1,6 @@
 # Multi-harness subagents
 
-This extension is derived from Ben Davis's `davis7dotsh/my-pi-setup` subagent implementation at commit `f992ae691700371f56bcd19c6bc843fee7688fdf`. It is tracked here so Hasan's Pi configuration installs reproducibly from the local package rather than depending on untracked nested `node_modules` inside the upstream Git checkout.
+This extension is derived from Ben Davis's `davis7dotsh/my-pi-setup` subagent implementation at commit `f992ae691700371f56bcd19c6bc843fee7688fdf`. It is tracked here so this Pi configuration installs reproducibly from the local package rather than depending on untracked nested `node_modules` inside the upstream Git checkout.
 
 The production source is unchanged except for using `effect@4.0.0-beta.97`, the mature API-compatible predecessor to upstream's two-day-old beta 98 pin. The focused manager/UI suite and live Claude Code/Codex backend suite verify that substitution.
 

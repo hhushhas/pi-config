@@ -1,3 +1,5 @@
+import { isAbsolute } from "node:path";
+
 export const WORKFLOW_SCHEMA_VERSION = 2 as const;
 
 export type WorkflowRunStatus =
@@ -220,7 +222,7 @@ export function validateDefinition(definition: WorkflowDefinition): WorkflowNode
     if (ids.has(id)) throw new Error(`Duplicate node id '${id}'.`);
     if (!node.agent.trim()) throw new Error(`Node '${id}' needs an agent role.`);
     if (!node.task.trim()) throw new Error(`Node '${id}' needs a task.`);
-    if (node.cwd !== undefined && (!node.cwd.trim() || node.cwd.startsWith("/") || node.cwd.split(/[\\/]+/).includes(".."))) {
+    if (node.cwd !== undefined && (!node.cwd.trim() || isAbsolute(node.cwd) || node.cwd.split(/[\\/]+/).includes(".."))) {
       throw new Error(`Node '${id}' cwd must be a relative path contained by the workflow execution directory.`);
     }
     if (node.thinking !== undefined && !(THINKING_LEVELS as readonly string[]).includes(node.thinking)) throw new Error(`Node '${id}' has unsupported reasoning effort '${node.thinking}'.`);

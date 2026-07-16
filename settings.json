@@ -1,7 +1,7 @@
 {
   "lastChangelogVersion": "0.80.6",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.6-luna",
+  "defaultModel": "gpt-5.6-sol",
   "defaultThinkingLevel": "medium",
   "compaction": {
     "enabled": true,
@@ -25,7 +25,32 @@
       "source": "npm:@upstash/context7-pi@0.1.1",
       "prompts": []
     },
-    "npm:@ryan_nookpi/pi-extension-auto-name@0.3.3",
+    {
+      "source": "./packages/portable-pi-setup",
+      "extensions": [
+        "+extensions/ask-user/index.ts",
+        "+extensions/dag-workflows.ts",
+        "+extensions/subagents/index.ts",
+        "+extensions/foreground-bash-policy.ts",
+        "+extensions/background-terminals/index.ts",
+        "+extensions/delegation-gate.ts",
+        "+extensions/dcg-guard.ts",
+        "+extensions/manual-only-skills.ts",
+        "+extensions/openai-image-generation.ts",
+        "+extensions/auto-name/index.ts"
+      ],
+      "skills": [
+        "+skills/codex-review/SKILL.md",
+        "+skills/skillbox/SKILL.md",
+        "+skills/spec-craft/SKILL.md",
+        "+skills/writing/SKILL.md"
+      ],
+      "prompts": [
+        "+prompts/debrief.md",
+        "+prompts/orchestrate.md"
+      ],
+      "themes": []
+    },
     {
       "source": "git:github.com/davis7dotsh/my-pi-setup@8feb880c9275faaaccb9e4a00ec1ea800cfbfc9f",
       "extensions": [
@@ -41,21 +66,7 @@
         "+themes/github-dark-default.json"
       ]
     },
-    {
-      "source": "/Users/macmini/code/pi-config",
-      "extensions": [
-        "+extensions/ask-user/index.ts",
-        "+extensions/ui-dashboard.ts",
-        "+extensions/dag-workflows.ts",
-        "+extensions/subagents/index.ts",
-        "+extensions/foreground-bash-policy.ts",
-        "+extensions/background-terminals/index.ts",
-        "+extensions/delegation-gate.ts"
-      ],
-      "skills": [],
-      "prompts": [],
-      "themes": []
-    }
+    "npm:pi-chrome@0.15.46"
   ],
   "subagents": {
     "maxSubagentSpawnsPerSession": 256,
@@ -88,7 +99,11 @@
       },
       "oracle": {
         "disabled": true
+      },
+      "delegate": {
+        "disabled": true
       }
     }
-  }
+  },
+  "showHardwareCursor": true
 }

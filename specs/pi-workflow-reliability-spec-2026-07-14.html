@@ -76,7 +76,7 @@
 <main>
 <header>
   <div>
-    <div class="eyebrow">Hasan's Pi configuration · 2026-07-14</div>
+    <div class="eyebrow">Portable Pi configuration · 2026-07-14</div>
     <h1>Pi Workflow Reliability</h1>
     <div class="muted">Safety Release A + Reliability Release B</div>
   </div>
@@ -92,7 +92,7 @@
   </div>
   <div class="mermaid">
 flowchart LR
-  U["Hasan / main agent"] -->|"creates and controls"| W["Workflow scheduler"]
+  U["User / main agent"] -->|"creates and controls"| W["Workflow scheduler"]
   W -->|"protocol v2 RPC"| R["Pinned pi-subagents runtime"]
   R -->|"event-only children"| C["Worker attempts"]
   C -->|"bounded terminal artifacts"| W

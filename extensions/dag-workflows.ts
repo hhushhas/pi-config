@@ -160,7 +160,7 @@ export default function (pi: ExtensionAPI) {
     name: "workflow",
     label: "Dependency-aware workflow",
     description:
-      "Create and control durable dependency-aware subagent DAGs. Use only when Hasan explicitly asks for subagents/orchestration, invokes /orchestrate, or requests a dependency-aware workflow. Independent nodes run concurrently; dependent nodes wait for successful prerequisites.",
+      "Create and control durable dependency-aware subagent DAGs. Use only when the user explicitly asks for subagents/orchestration, invokes /orchestrate, or requests a dependency-aware workflow. Independent nodes run concurrently; dependent nodes wait for successful prerequisites.",
     parameters: WorkflowParams,
     async execute(_toolCallId, params) {
       if (!scheduler) {

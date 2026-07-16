@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent document template — component showcase</title>
+<style>
+  /* ============ Design tokens (canon — copy verbatim) ============ */
+  :root {
+    --bg: #faf9f7; --fg: #37352f; --muted: #9b9a97; --line: #e8e6e1;
+    --card: #f3f1ec; --accent: #2383e2; --amber: #d9730d; --green: #448361; --red: #d44c47;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #191919; --fg: #e3e2e0; --muted: #9b9b9b; --line: #2f2f2f;
+      --card: #232323; --accent: #529cca; --amber: #cb7b37; --green: #4f9768; --red: #de5550;
+    }
+  }
+
+  /* ============ Base ============ */
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg); margin: 0; -webkit-font-smoothing: antialiased;
+    font: 16px/1.65 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  main { display: grid; grid-template-columns: 1fr min(720px, calc(100% - 3rem)) 1fr; padding: 3rem 0 6rem; row-gap: .25rem; }
+  main > * { grid-column: 2; min-width: 0; }
+  .wide { grid-column: 1 / -1; width: min(1080px, calc(100% - 3rem)); justify-self: center; }
+  h1 { font-size: 1.75rem; font-weight: 600; line-height: 1.3; margin: 0 0 .5rem; }
+  h2 { font-size: 1.25rem; font-weight: 600; border-bottom: 1px solid var(--line); padding-bottom: .3rem; margin: 3rem 0 1rem; }
+  h3 { font-size: 1rem; font-weight: 600; margin: 2rem 0 .5rem; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  .kicker { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 .25rem; }
+  .caption { color: var(--muted); font-size: .85rem; }
+  .icon { width: 1.1em; height: 1.1em; vertical-align: -.18em; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  img { max-width: 100%; border-radius: 8px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+
+  /* ============ Sticky section nav ============ */
+  nav.toc {
+    position: sticky; top: 0; z-index: 20; grid-column: 1 / -1; width: 100%;
+    background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line); padding: .5rem 1.5rem;
+    display: flex; gap: .35rem 1rem; flex-wrap: wrap; font-size: .85rem;
+  }
+  nav.toc a { color: var(--muted); } nav.toc a:hover { color: var(--accent); text-decoration: none; }
+  section[id] { scroll-margin-top: 5rem; }
+
+  /* ============ Surfaces ============ */
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .75rem; margin: 1rem 0; }
+  .tiles .card { margin: 0; }
+  .tiles .card b { font-size: 1.35rem; font-weight: 600; display: block; font-variant-numeric: tabular-nums; }
+  .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+  @media (max-width: 640px) { .cols2 { grid-template-columns: 1fr; } }
+
+  /* ============ Badges ============ */
+  .badge {
+    display: inline-block; padding: .1rem .6rem; border-radius: 999px; font-size: .75rem;
+    border: 1px solid var(--line); color: var(--muted);
+  }
+  .badge.accent { color: var(--accent); border-color: var(--accent); }
+  .badge.green  { color: var(--green);  border-color: var(--green); }
+  .badge.amber  { color: var(--amber);  border-color: var(--amber); }
+  .badge.red    { color: var(--red);    border-color: var(--red); }
+
+  /* ============ Callouts & progress ============ */
+  .callout { border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--card); border-radius: 8px; padding: .75rem 1rem; margin: 1rem 0; }
+  .callout.amber { border-left-color: var(--amber); }
+  .callout.red   { border-left-color: var(--red); }
+  .progress { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .progress > i { display: block; height: 100%; background: var(--green); }
+  .progress-row { display: flex; align-items: center; gap: .75rem; margin: .5rem 0; }
+  .progress-row .progress { flex: 1; }
+  .progress-row .n { font-size: .82rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ============ Tables ============ */
+  table { border-collapse: collapse; width: 100%; font-size: .95rem; margin: 1rem 0; }
+  th, td { border-bottom: 1px solid var(--line); padding: .5rem .75rem; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
+
+  /* ============ Code ============ */
+  code, pre, kbd { font: .875rem/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  code { background: var(--card); border-radius: 4px; padding: .1rem .35rem; }
+  pre { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 1rem; overflow-x: auto; }
+  pre code { background: none; padding: 0; }
+  .hl { background: color-mix(in srgb, var(--accent) 14%, transparent); display: inline-block; width: 100%; }
+
+  /* ============ Hover definitions ============ */
+  .term { position: relative; border-bottom: 1px dotted var(--muted); cursor: help; }
+  .term:hover::after, .term:focus::after {
+    content: attr(data-def); position: absolute; left: 0; top: calc(100% + 4px); z-index: 10;
+    width: max-content; max-width: 320px; padding: .5rem .75rem; font-size: .85rem; line-height: 1.4;
+    background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.15);
+  }
+
+  /* ============ Collapsibles ============ */
+  details { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: .5rem 1rem; margin: 1rem 0; }
+  summary { cursor: pointer; color: var(--muted); font-size: .9rem; }
+  details[open] summary { margin-bottom: .5rem; }
+  details.src summary { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+  details.src pre { background: var(--bg); margin: .25rem 0 .5rem; }
+
+  /* ============ Buttons & inputs ============ */
+  button { font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: .35rem .9rem; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button:disabled:hover { border-color: var(--line); }
+  button.iconbtn { padding: .35rem .5rem; line-height: 1; }
+  input, select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: .35rem .6rem; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ============ Checklist card ============ */
+  ul.checklist { list-style: none; padding: 0; margin: .25rem 0; }
+  ul.checklist li { display: flex; gap: .6rem; align-items: baseline; padding: .3rem 0; }
+  ul.checklist li .icon { flex: none; vertical-align: -.15em; }
+  ul.checklist li.done .icon { color: var(--green); }
+  ul.checklist li.todo .cbox { flex: none; width: .95em; height: .95em; border: 1.5px solid var(--muted); border-radius: 4px; align-self: center; }
+  ul.checklist li.todo { color: var(--muted); }
+
+  /* ============ Glossary grid ============ */
+  dl.glossary { display: grid; grid-template-columns: max-content 1fr; gap: .4rem 1.5rem; margin: 1rem 0; }
+  dl.glossary dt { font-weight: 600; font-size: .95rem; }
+  dl.glossary dd { margin: 0; font-size: .95rem; }
+  @media (max-width: 520px) { dl.glossary { grid-template-columns: 1fr; } dl.glossary dd { margin-bottom: .5rem; } }
+
+  /* ============ Journey strip ============ */
+  .journey { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin: 1rem 0; }
+  .journey .stop { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: .25rem .8rem; font-size: .85rem; white-space: nowrap; }
+  .journey .stop.new { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 30%, transparent); }
+  .journey .sep { color: var(--muted); flex: none; }
+
+  /* ============ Before / after panels ============ */
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin: 1rem 0; }
+  @media (max-width: 640px) { .panes { grid-template-columns: 1fr; } }
+  .pane { border: 1px solid var(--line); border-radius: 8px; padding: .9rem 1.1rem; }
+  .pane .kicker { margin-bottom: .5rem; }
+  .pane.before { border-style: dashed; }
+  .pane.before .kicker { color: var(--muted); }
+  .pane.after { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .pane.after .kicker { color: var(--accent); }
+
+  /* ============ Timeline / phase tracker ============ */
+  ol.phases { display: flex; list-style: none; padding: 0; margin: 1.25rem 0; gap: .5rem; }
+  ol.phases li { flex: 1; position: relative; padding-top: 1.35rem; font-size: .85rem; color: var(--muted); min-width: 0; }
+  ol.phases li::before {
+    content: ""; position: absolute; top: 0; left: 0; width: .8rem; height: .8rem;
+    border-radius: 50%; border: 2px solid var(--line); background: var(--bg);
+  }
+  ol.phases li::after {
+    content: ""; position: absolute; top: .45rem; left: 1.3rem; right: .1rem; height: 1px; background: var(--line);
+  }
+  ol.phases li:last-child::after { display: none; }
+  ol.phases li.done::before { background: var(--green); border-color: var(--green); }
+  ol.phases li.done::after { background: var(--green); }
+  ol.phases li.now { color: var(--fg); font-weight: 600; }
+  ol.phases li.now::before { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 25%, var(--bg)); }
+  ol.phases li .caption { display: block; font-weight: 400; }
+
+  /* ============ Scorecard (promised vs delivered) ============ */
+  .scorecard { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 1rem 0; }
+  .scorecard .row { display: grid; grid-template-columns: 1fr 1fr 6.5rem; gap: 1rem; padding: .6rem 1rem; border-bottom: 1px solid var(--line); font-size: .92rem; align-items: start; }
+  .scorecard .row:last-child { border-bottom: none; }
+  .scorecard .row.head { background: var(--card); padding-block: .45rem; }
+  .scorecard .row.head span { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; }
+  .scorecard .row .badge { justify-self: start; }
+  @media (max-width: 640px) { .scorecard .row { grid-template-columns: 1fr; gap: .25rem; } }
+
+  /* ============ Legend row ============ */
+  .legend { display: flex; gap: 1rem; font-size: .78rem; color: var(--muted); align-items: center; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: .7rem; height: .7rem; border-radius: 3px; margin-right: .3rem; vertical-align: -1px; border: 1px solid var(--line); background: var(--bg); }
+  .legend .k-new i { border-color: var(--accent); box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 45%, transparent); }
+  .legend .k-lit i { background: color-mix(in srgb, var(--accent) 14%, var(--bg)); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  .legend .k-dim i { opacity: .35; }
+  .legend .k-green i { background: var(--green); border-color: var(--green); }
+  .legend .k-amber i { background: var(--amber); border-color: var(--amber); }
+
+  /* ============ Fullbleed stage (dot-grid) ============ */
+  .fullbleed {
+    grid-column: 1 / -1; width: 100%; min-height: 100dvh;
+    padding: 2.5rem clamp(1rem, 3vw, 3rem) 3rem;
+    background: var(--card);
+    background-image: radial-gradient(color-mix(in srgb, var(--muted) 20%, transparent) 1px, transparent 1px);
+    background-size: 24px 24px;
+    border-block: 1px solid var(--line);
+  }
+  .fullbleed.demo { min-height: 0; } /* showcase only — real mini worlds keep full height */
+  :fullscreen { background: var(--bg); overflow-y: auto; }
+  .stage-head { display: flex; align-items: center; gap: .75rem 1.25rem; flex-wrap: wrap; max-width: 1080px; margin: 0 auto 1.5rem; }
+  .stage-head .crumb { font-size: .85rem; color: var(--muted); }
+  .stage-head .crumb b { color: var(--fg); font-weight: 600; }
+  .stage-head .spacer { flex: 1; }
+  .stage-body { max-width: 1080px; margin: 0 auto; }
+  .stage-band { border: 1px dashed color-mix(in srgb, var(--muted) 35%, transparent); border-radius: 14px; padding: 1.9rem 1.25rem 1.1rem; position: relative; }
+  .stage-band > .band-label { position: absolute; top: -.7rem; left: 1rem; background: var(--card); padding: 0 .5rem; font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .stage-band .blocks { display: flex; gap: .9rem; flex-wrap: wrap; }
+  .block { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: .7rem 1rem; font-size: .9rem; min-width: 10rem; }
+  .block .caption { display: block; }
+  .block.is-new { border-color: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 30%, transparent); }
+  .block.is-new .sub { color: var(--accent); font-size: .75rem; display: block; }
+  .readout { display: flex; gap: 1.25rem; flex-wrap: wrap; margin-top: 1.25rem; font-size: .82rem; color: var(--muted); }
+  .readout b { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .readout b.hot { color: var(--red); }
+
+  /* ============ Showcase chrome (this page only) ============ */
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: .75rem; margin: 1rem 0; }
+  .swatch { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; font-size: .8rem; }
+  .swatch i { display: block; height: 3rem; border-bottom: 1px solid var(--line); }
+  .swatch div { padding: .4rem .6rem; }
+  .swatch code { background: none; padding: 0; font-size: .78rem; }
+  .swatch .caption { display: block; font-size: .72rem; }
+  .icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); gap: .6rem; margin: 1rem 0; }
+  .icon-grid .cell { border: 1px solid var(--line); border-radius: 8px; padding: .75rem .5rem .55rem; text-align: center; background: var(--card); }
+  .icon-grid .cell .icon { width: 1.4em; height: 1.4em; display: block; margin: 0 auto .35rem; }
+  .icon-grid .cell code { background: none; padding: 0; font-size: .72rem; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- ============ Icon sprite: one definition, many uses, zero requests ============ -->
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="10" y="10" width="4" height="4"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15.3 15.3 0 0 1 4 9 15.3 15.3 0 0 1-4 9 15.3 15.3 0 0 1-4-9 15.3 15.3 0 0 1 4-9z"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></symbol>
+  <symbol id="i-warning" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+  <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M5 8h3a2 2 0 1 1 4 0h3v3a2 2 0 1 1 0 4v3h-3a2 2 0 1 0-4 0H5z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l12-7z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h6"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M22 12h-4l-3 8-6-16-3 8H2"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+</svg>
+
+<nav class="toc" aria-label="Sections">
+  <a href="#tokens">Tokens</a>
+  <a href="#type">Type</a>
+  <a href="#icons">Icons</a>
+  <a href="#badges">Badges</a>
+  <a href="#tiles">Tiles</a>
+  <a href="#cards">Cards</a>
+  <a href="#compare">Compare</a>
+  <a href="#callouts">Callouts</a>
+  <a href="#progress">Progress</a>
+  <a href="#tables">Tables</a>
+  <a href="#checklist">Checklist</a>
+  <a href="#glossary">Glossary</a>
+  <a href="#journey">Journey</a>
+  <a href="#panes">Before/After</a>
+  <a href="#phases">Timeline</a>
+  <a href="#terms">Terms</a>
+  <a href="#collapsible">Details</a>
+  <a href="#buttons">Buttons</a>
+  <a href="#legend">Legend</a>
+  <a href="#stage">Stage</a>
+  <a href="#scorecard">Scorecard</a>
+  <a href="#rules">Rules</a>
+</nav>
+
+<main>
+  <header>
+    <p class="kicker">Agent design system · living template</p>
+    <h1><svg class="icon"><use href="#i-doc"/></svg> Document template &amp; component showcase</h1>
+    <p>Every HTML document built for the user — spec companions, debriefs, reports — uses these tokens and components. This page renders each one live so new documents copy working source, not prose descriptions. If a document doesn't look like this showcase, it's off-template.</p>
+    <div class="callout">
+      <b>How to use this file.</b> Open it in a browser to see every component in both themes. View source to copy — the whole page is built from its own rules. Each section also ends with a collapsed <code>Source</code> block holding minimal, canonical markup for copy-paste. Copy the <code>&lt;style&gt;</code> block once per document; take component markup per section.
+    </div>
+  </header>
+
+  <section id="tokens">
+    <h2><svg class="icon"><use href="#i-gear"/></svg> Design tokens</h2>
+    <p>Nine CSS custom properties; nothing hardcoded. Both roles ship via <code>prefers-color-scheme</code> — the boxes below render the role your OS is in; the caption lists light · dark values.</p>
+    <div class="swatches">
+      <div class="swatch"><i style="background:var(--bg)"></i><div><code>--bg</code><span class="caption">#faf9f7 · #191919</span></div></div>
+      <div class="swatch"><i style="background:var(--fg)"></i><div><code>--fg</code><span class="caption">#37352f · #e3e2e0</span></div></div>
+      <div class="swatch"><i style="background:var(--muted)"></i><div><code>--muted</code><span class="caption">#9b9a97 · #9b9b9b</span></div></div>
+      <div class="swatch"><i style="background:var(--line)"></i><div><code>--line</code><span class="caption">#e8e6e1 · #2f2f2f</span></div></div>
+      <div class="swatch"><i style="background:var(--card)"></i><div><code>--card</code><span class="caption">#f3f1ec · #232323</span></div></div>
+      <div class="swatch"><i style="background:var(--accent)"></i><div><code>--accent</code><span class="caption">#2383e2 · #529cca</span></div></div>
+      <div class="swatch"><i style="background:var(--amber)"></i><div><code>--amber</code><span class="caption">#d9730d · #cb7b37</span></div></div>
+      <div class="swatch"><i style="background:var(--green)"></i><div><code>--green</code><span class="caption">#448361 · #4f9768</span></div></div>
+      <div class="swatch"><i style="background:var(--red)"></i><div><code>--red</code><span class="caption">#d44c47 · #de5550</span></div></div>
+    </div>
+    <p class="caption">Meaning: accent = links/emphasis/new. Amber = open decision/risk. Green = done/solid. Red = hard failure only. One accent; no gradients, no decorative color.</p>
+    <details class="src"><summary>Source</summary>
+<pre><code>:root {
+  --bg: #faf9f7; --fg: #37352f; --muted: #9b9a97; --line: #e8e6e1;
+  --card: #f3f1ec; --accent: #2383e2; --amber: #d9730d; --green: #448361; --red: #d44c47;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #191919; --fg: #e3e2e0; --muted: #9b9b9b; --line: #2f2f2f;
+    --card: #232323; --accent: #529cca; --amber: #cb7b37; --green: #4f9768; --red: #de5550;
+  }
+}</code></pre>
+    </details>
+  </section>
+
+  <section id="type">
+    <h2><svg class="icon"><use href="#i-doc"/></svg> Type scale</h2>
+    <p>System sans at 16px/1.65. Headings are just larger and slightly bolder — never shouty. Prose sits in a ~720px column.</p>
+    <div class="card">
+      <p class="kicker">Kicker · uppercase context line</p>
+      <h1 style="margin-top:.25rem">Heading one — the document title</h1>
+      <h2 style="margin-top:1.25rem">Heading two — a section, with hairline</h2>
+      <h3>Heading three — a subsection</h3>
+      <p>Body prose at 16px/1.65 with <a href="#type">links in accent</a>, <code>inline code</code>, and <b>bold for weight</b>. Keep paragraphs short; let whitespace breathe.</p>
+      <p class="caption">Caption — muted .85rem, for annotations and figure notes.</p>
+    </div>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;p class="kicker"&gt;Kicker · uppercase context line&lt;/p&gt;
+&lt;h1&gt;Heading one&lt;/h1&gt;
+&lt;h2&gt;Heading two&lt;/h2&gt;
+&lt;h3&gt;Heading three&lt;/h3&gt;
+&lt;p&gt;Body prose with &lt;a href="#"&gt;links&lt;/a&gt; and &lt;code&gt;inline code&lt;/code&gt;.&lt;/p&gt;
+&lt;p class="caption"&gt;Caption — muted annotation.&lt;/p&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="icons">
+    <h2><svg class="icon"><use href="#i-bolt"/></svg> Icon library</h2>
+    <p>One inline <code>&lt;symbol&gt;</code> sprite at the top of <code>&lt;body&gt;</code>; every icon strokes <code>currentColor</code> so it follows the theme and its parent's color. No icon fonts, no CDNs.</p>
+    <div class="icon-grid">
+      <div class="cell"><svg class="icon"><use href="#i-user"/></svg><code>i-user</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-users"/></svg><code>i-users</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-chip"/></svg><code>i-chip</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-db"/></svg><code>i-db</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-globe"/></svg><code>i-globe</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-lock"/></svg><code>i-lock</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-shield"/></svg><code>i-shield</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-clock"/></svg><code>i-clock</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-calendar"/></svg><code>i-calendar</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-warning"/></svg><code>i-warning</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-check"/></svg><code>i-check</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-x"/></svg><code>i-x</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-arrow-right"/></svg><code>i-arrow-right</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-branch"/></svg><code>i-branch</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-puzzle"/></svg><code>i-puzzle</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-play"/></svg><code>i-play</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-pause"/></svg><code>i-pause</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-expand"/></svg><code>i-expand</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-search"/></svg><code>i-search</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-doc"/></svg><code>i-doc</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-folder"/></svg><code>i-folder</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-bolt"/></svg><code>i-bolt</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-pulse"/></svg><code>i-pulse</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-wallet"/></svg><code>i-wallet</code></div>
+      <div class="cell"><svg class="icon"><use href="#i-gear"/></svg><code>i-gear</code></div>
+    </div>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;!-- once, at the top of &lt;body&gt; --&gt;
+&lt;svg style="display:none" aria-hidden="true"&gt;
+  &lt;symbol id="i-check" viewBox="0 0 24 24"&gt;&lt;path d="M20 6 9 17l-5-5"/&gt;&lt;/symbol&gt;
+  &lt;!-- …copy the symbols you need from this file's sprite… --&gt;
+&lt;/svg&gt;
+
+&lt;!-- anywhere after --&gt;
+&lt;svg class="icon"&gt;&lt;use href="#i-check"/&gt;&lt;/svg&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="badges">
+    <h2><svg class="icon"><use href="#i-shield"/></svg> Badges</h2>
+    <p>Inline status. Muted is neutral; color only when it means something.</p>
+    <p>
+      <span class="badge">neutral</span>
+      <span class="badge accent">new</span>
+      <span class="badge green">done</span>
+      <span class="badge amber">open decision</span>
+      <span class="badge red">blocker</span>
+    </p>
+    <h3>Findings severity row</h3>
+    <p>
+      <span class="badge red"><svg class="icon"><use href="#i-x"/></svg> critical · 1</span>
+      <span class="badge amber"><svg class="icon"><use href="#i-warning"/></svg> risk · 3</span>
+      <span class="badge green"><svg class="icon"><use href="#i-check"/></svg> resolved · 12</span>
+      <span class="badge">info · 5</span>
+    </p>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;span class="badge"&gt;neutral&lt;/span&gt;
+&lt;span class="badge accent"&gt;new&lt;/span&gt;
+&lt;span class="badge green"&gt;done&lt;/span&gt;
+&lt;span class="badge amber"&gt;open decision&lt;/span&gt;
+&lt;span class="badge red"&gt;blocker&lt;/span&gt;
+
+&lt;span class="badge amber"&gt;&lt;svg class="icon"&gt;&lt;use href="#i-warning"/&gt;&lt;/svg&gt; risk · 3&lt;/span&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="tiles">
+    <h2><svg class="icon"><use href="#i-chip"/></svg> Stat tiles</h2>
+    <p>The TL;DR row near the top of a document. Icon, big number, muted label.</p>
+    <div class="tiles">
+      <div class="card"><p class="kicker"><svg class="icon"><use href="#i-users"/></svg> Agents</p><b>7</b><span class="caption">running nightly</span></div>
+      <div class="card"><p class="kicker"><svg class="icon"><use href="#i-clock"/></svg> P95 latency</p><b>412 ms</b><span class="caption">was 1.9 s</span></div>
+      <div class="card"><p class="kicker"><svg class="icon"><use href="#i-wallet"/></svg> Cost / run</p><b>$0.14</b><span class="caption">−38% vs spec</span></div>
+      <div class="card"><p class="kicker"><svg class="icon"><use href="#i-warning"/></svg> Open risks</p><b style="color:var(--amber)">2</b><span class="caption">both scoped</span></div>
+    </div>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;div class="tiles"&gt;
+  &lt;div class="card"&gt;
+    &lt;p class="kicker"&gt;&lt;svg class="icon"&gt;&lt;use href="#i-clock"/&gt;&lt;/svg&gt; P95 latency&lt;/p&gt;
+    &lt;b&gt;412 ms&lt;/b&gt;
+    &lt;span class="caption"&gt;was 1.9 s&lt;/span&gt;
+  &lt;/div&gt;
+  &lt;!-- …more tiles… --&gt;
+&lt;/div&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="cards">
+    <h2><svg class="icon"><use href="#i-folder"/></svg> Cards</h2>
+    <p>The default surface: card background, hairline border, 8px radius. Never a shadow.</p>
+    <div class="card">
+      <h3 style="margin-top:0"><svg class="icon"><use href="#i-branch"/></svg> Lease keeper <span class="badge accent">new</span></h3>
+      <p style="margin-bottom:0">Hands out time-limited permits for cloud machines. When a permit expires, capacity is forced to zero — no zombie billing.</p>
+    </div>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;div class="card"&gt;
+  &lt;h3 style="margin-top:0"&gt;&lt;svg class="icon"&gt;&lt;use href="#i-branch"/&gt;&lt;/svg&gt; Title &lt;span class="badge accent"&gt;new&lt;/span&gt;&lt;/h3&gt;
+  &lt;p style="margin-bottom:0"&gt;One tight paragraph of body.&lt;/p&gt;
+&lt;/div&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="compare">
+    <h2><svg class="icon"><use href="#i-branch"/></svg> Two-column compare</h2>
+    <p><code>.cols2</code> with the ✅ / 🚫 scope pattern — what's in, what's explicitly out.</p>
+    <div class="cols2">
+      <div class="card">
+        <p class="kicker" style="color:var(--green)">✅ In scope</p>
+        <ul style="margin:0;padding-left:1.2rem">
+          <li>Lease issue, renew, expire</li>
+          <li>Billing tied to live permits</li>
+          <li>Session → permit traceability</li>
+        </ul>
+      </div>
+      <div class="card">
+        <p class="kicker" style="color:var(--red)">🚫 Not in scope</p>
+        <ul style="margin:0;padding-left:1.2rem">
+          <li>Multi-region failover</li>
+          <li>Spot-instance bidding</li>
+          <li>Retroactive refunds</li>
+        </ul>
+      </div>
+    </div>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;div class="cols2"&gt;
+  &lt;div class="card"&gt;
+    &lt;p class="kicker" style="color:var(--green)"&gt;✅ In scope&lt;/p&gt;
+    &lt;ul style="margin:0;padding-left:1.2rem"&gt;&lt;li&gt;…&lt;/li&gt;&lt;/ul&gt;
+  &lt;/div&gt;
+  &lt;div class="card"&gt;
+    &lt;p class="kicker" style="color:var(--red)"&gt;🚫 Not in scope&lt;/p&gt;
+    &lt;ul style="margin:0;padding-left:1.2rem"&gt;&lt;li&gt;…&lt;/li&gt;&lt;/ul&gt;
+  &lt;/div&gt;
+&lt;/div&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="callouts">
+    <h2><svg class="icon"><use href="#i-warning"/></svg> Callouts</h2>
+    <p>Block-level notes. Accent = info, amber = open decision or risk, red = hard failure.</p>
+    <div class="callout"><b>Info.</b> The migration runs in shadow mode for one week before cutover.</div>
+    <div class="callout amber"><b>Open decision.</b> Lease TTL: 5 min (fast reclaim) vs 15 min (fewer renewals). Owner: the user. Due before rollout.</div>
+    <div class="callout red"><b>Failure.</b> Renewal storms at &gt; 10k leases hard-crash the keeper. Blocking; fix landed in <code>a1b2c3d</code>.</div>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;div class="callout"&gt;&lt;b&gt;Info.&lt;/b&gt; …&lt;/div&gt;
+&lt;div class="callout amber"&gt;&lt;b&gt;Open decision.&lt;/b&gt; …&lt;/div&gt;
+&lt;div class="callout red"&gt;&lt;b&gt;Failure.&lt;/b&gt; …&lt;/div&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="progress">
+    <h2><svg class="icon"><use href="#i-pulse"/></svg> Progress bars</h2>
+    <p>Always pair the bar with an n/m label — a bar alone hides the denominator.</p>
+    <div class="progress-row"><span class="n" style="min-width:7.5rem">Rollout</span><div class="progress"><i style="width:80%"></i></div><span class="n">8/10 regions</span></div>
+    <div class="progress-row"><span class="n" style="min-width:7.5rem">Test coverage</span><div class="progress"><i style="width:45%;background:var(--amber)"></i></div><span class="n">45/100 paths</span></div>
+    <div class="progress-row"><span class="n" style="min-width:7.5rem">Backfill</span><div class="progress"><i style="width:100%"></i></div><span class="n">31/31 days</span></div>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;div class="progress-row"&gt;
+  &lt;span class="n"&gt;Rollout&lt;/span&gt;
+  &lt;div class="progress"&gt;&lt;i style="width:80%"&gt;&lt;/i&gt;&lt;/div&gt;
+  &lt;span class="n"&gt;8/10 regions&lt;/span&gt;
+&lt;/div&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="tables">
+    <h2><svg class="icon"><use href="#i-db"/></svg> Tables</h2>
+    <p>Hairline rows, muted uppercase headers. The responsibility table (part / before / now / why) is the standard shape for "what changed where".</p>
+    <table>
+      <thead><tr><th>Part</th><th>Before</th><th>Now</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td><b>Call engine</b></td><td>Grabbed machines directly</td><td>Asks the lease keeper for a permit</td><td>One authority over capacity</td></tr>
+        <tr><td><b>Billing</b></td><td>Charged per machine seen</td><td>Charges only live permits</td><td>Expired machines can't bill</td></tr>
+        <tr><td><b>Sessions</b></td><td>No machine provenance</td><td>Stores the permit id</td><td>Every charge traces to a lease</td></tr>
+      </tbody>
+    </table>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;table&gt;
+  &lt;thead&gt;&lt;tr&gt;&lt;th&gt;Part&lt;/th&gt;&lt;th&gt;Before&lt;/th&gt;&lt;th&gt;Now&lt;/th&gt;&lt;th&gt;Why&lt;/th&gt;&lt;/tr&gt;&lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;&lt;td&gt;&lt;b&gt;Call engine&lt;/b&gt;&lt;/td&gt;&lt;td&gt;…&lt;/td&gt;&lt;td&gt;…&lt;/td&gt;&lt;td&gt;…&lt;/td&gt;&lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="checklist">
+    <h2><svg class="icon"><use href="#i-check"/></svg> Checklist card</h2>
+    <p>Done items get a green check; open items stay muted with an empty box.</p>
+    <div class="card">
+      <p class="kicker">Launch checklist</p>
+      <ul class="checklist">
+        <li class="done"><svg class="icon"><use href="#i-check"/></svg> Shadow mode ran 7 days clean</li>
+        <li class="done"><svg class="icon"><use href="#i-check"/></svg> Billing reconciliation matches ledger</li>
+        <li class="todo"><span class="cbox"></span> Alerting thresholds signed off</li>
+        <li class="todo"><span class="cbox"></span> Runbook reviewed by on-call</li>
+      </ul>
+    </div>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;div class="card"&gt;
+  &lt;p class="kicker"&gt;Launch checklist&lt;/p&gt;
+  &lt;ul class="checklist"&gt;
+    &lt;li class="done"&gt;&lt;svg class="icon"&gt;&lt;use href="#i-check"/&gt;&lt;/svg&gt; Done item&lt;/li&gt;
+    &lt;li class="todo"&gt;&lt;span class="cbox"&gt;&lt;/span&gt; Open item&lt;/li&gt;
+  &lt;/ul&gt;
+&lt;/div&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="glossary">
+    <h2><svg class="icon"><use href="#i-search"/></svg> Definition / glossary grid</h2>
+    <p>Two-column <code>&lt;dl&gt;</code> for the terms a document leans on.</p>
+    <dl class="glossary">
+      <dt>Lease</dt><dd>A time-limited permit to keep one cloud machine running.</dd>
+      <dt>Heartbeat</dt><dd>The periodic renewal that keeps a lease alive.</dd>
+      <dt>Zombie</dt><dd>A machine still running (and billing) after its work ended.</dd>
+      <dt>Reclaim</dt><dd>Forced shutdown when a lease expires unrenewed.</dd>
+    </dl>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;dl class="glossary"&gt;
+  &lt;dt&gt;Lease&lt;/dt&gt;&lt;dd&gt;A time-limited permit to keep one machine running.&lt;/dd&gt;
+  &lt;dt&gt;Heartbeat&lt;/dt&gt;&lt;dd&gt;The periodic renewal that keeps a lease alive.&lt;/dd&gt;
+&lt;/dl&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="journey">
+    <h2><svg class="icon"><use href="#i-arrow-right"/></svg> Journey strip</h2>
+    <p>A flow as stop chips with separators; the changed/new stop glows accent.</p>
+    <div class="journey">
+      <span class="stop">Join call</span>
+      <span class="sep"><svg class="icon"><use href="#i-arrow-right"/></svg></span>
+      <span class="stop">Call engine</span>
+      <span class="sep"><svg class="icon"><use href="#i-arrow-right"/></svg></span>
+      <span class="stop new">Lease keeper</span>
+      <span class="sep"><svg class="icon"><use href="#i-arrow-right"/></svg></span>
+      <span class="stop">Cloud machine</span>
+      <span class="sep"><svg class="icon"><use href="#i-arrow-right"/></svg></span>
+      <span class="stop">Ledger</span>
+    </div>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;div class="journey"&gt;
+  &lt;span class="stop"&gt;Join call&lt;/span&gt;
+  &lt;span class="sep"&gt;&lt;svg class="icon"&gt;&lt;use href="#i-arrow-right"/&gt;&lt;/svg&gt;&lt;/span&gt;
+  &lt;span class="stop new"&gt;Lease keeper&lt;/span&gt;
+  &lt;span class="sep"&gt;&lt;svg class="icon"&gt;&lt;use href="#i-arrow-right"/&gt;&lt;/svg&gt;&lt;/span&gt;
+  &lt;span class="stop"&gt;Ledger&lt;/span&gt;
+&lt;/div&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="panes">
+    <h2><svg class="icon"><use href="#i-branch"/></svg> Before / after panels</h2>
+    <p>The before pane is dashed and muted; the after pane carries the accent seam.</p>
+    <div class="panes">
+      <div class="pane before">
+        <p class="kicker">Before</p>
+        <p style="margin:0">Engine grabbed machines directly. Nothing forced them off — a crashed run could bill for weeks.</p>
+      </div>
+      <div class="pane after">
+        <p class="kicker">After</p>
+        <p style="margin:0">Every machine runs under a lease. No heartbeat, no machine — worst-case zombie cost is one TTL.</p>
+      </div>
+    </div>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;div class="panes"&gt;
+  &lt;div class="pane before"&gt;&lt;p class="kicker"&gt;Before&lt;/p&gt;&lt;p style="margin:0"&gt;…&lt;/p&gt;&lt;/div&gt;
+  &lt;div class="pane after"&gt;&lt;p class="kicker"&gt;After&lt;/p&gt;&lt;p style="margin:0"&gt;…&lt;/p&gt;&lt;/div&gt;
+&lt;/div&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="phases">
+    <h2><svg class="icon"><use href="#i-calendar"/></svg> Timeline / phase tracker</h2>
+    <p>Green dots are done, the accent dot is now, muted dots are ahead.</p>
+    <ol class="phases">
+      <li class="done">Spec<span class="caption">signed off</span></li>
+      <li class="done">Build<span class="caption">merged</span></li>
+      <li class="now">Shadow<span class="caption">day 4 of 7</span></li>
+      <li>Cutover<span class="caption">gated on shadow</span></li>
+      <li>Cleanup<span class="caption">old path removed</span></li>
+    </ol>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;ol class="phases"&gt;
+  &lt;li class="done"&gt;Spec&lt;span class="caption"&gt;signed off&lt;/span&gt;&lt;/li&gt;
+  &lt;li class="now"&gt;Shadow&lt;span class="caption"&gt;day 4 of 7&lt;/span&gt;&lt;/li&gt;
+  &lt;li&gt;Cutover&lt;span class="caption"&gt;gated on shadow&lt;/span&gt;&lt;/li&gt;
+&lt;/ol&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="terms">
+    <h2><svg class="icon"><use href="#i-search"/></svg> Hover definitions</h2>
+    <p>Every document defines its jargon inline. Hover (or Tab to focus) the dotted words: the <span class="term" tabindex="0" data-def="A time-limited permit to keep one cloud machine running.">lease</span> outlives any single <span class="term" tabindex="0" data-def="The periodic renewal signal that keeps a lease alive.">heartbeat</span>, but never survives a missed <span class="term" tabindex="0" data-def="The lease's expiry deadline — miss it and the machine is reclaimed.">TTL</span>.</p>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;span class="term" tabindex="0" data-def="Plain-English meaning."&gt;jargon&lt;/span&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="collapsible">
+    <h2><svg class="icon"><use href="#i-folder"/></svg> Collapsible details</h2>
+    <p>For depth that most readers skip: raw data, long logs, source blocks (like the ones on this page).</p>
+    <details>
+      <summary>Full reconciliation query (32 lines)</summary>
+      <pre><code>SELECT lease_id, SUM(cost_usd)
+FROM ledger
+GROUP BY lease_id
+HAVING SUM(cost_usd) &lt;&gt; expected(lease_id);</code></pre>
+    </details>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;details&gt;
+  &lt;summary&gt;Full reconciliation query (32 lines)&lt;/summary&gt;
+  &lt;pre&gt;&lt;code&gt;…&lt;/code&gt;&lt;/pre&gt;
+&lt;/details&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="buttons">
+    <h2><svg class="icon"><use href="#i-play"/></svg> Buttons</h2>
+    <p>Card-surface buttons with hairlines. Toggles carry <code>aria-pressed</code> (the middle one is live — click it).</p>
+    <p style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
+      <button type="button">Default</button>
+      <button type="button" class="primary">Primary</button>
+      <button type="button" aria-pressed="true" data-toggle-pressed>Before view</button>
+      <button type="button" disabled>Disabled</button>
+      <button type="button" class="iconbtn" aria-label="Play"><svg class="icon"><use href="#i-play"/></svg></button>
+      <button type="button" class="iconbtn" aria-label="Pause"><svg class="icon"><use href="#i-pause"/></svg></button>
+      <button type="button" class="iconbtn" aria-label="Fullscreen"><svg class="icon"><use href="#i-expand"/></svg></button>
+    </p>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;button type="button"&gt;Default&lt;/button&gt;
+&lt;button type="button" class="primary"&gt;Primary&lt;/button&gt;
+&lt;button type="button" aria-pressed="true"&gt;Before view&lt;/button&gt;
+&lt;button type="button" disabled&gt;Disabled&lt;/button&gt;
+&lt;button type="button" class="iconbtn" aria-label="Play"&gt;&lt;svg class="icon"&gt;&lt;use href="#i-play"/&gt;&lt;/svg&gt;&lt;/button&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="legend">
+    <h2><svg class="icon"><use href="#i-search"/></svg> Legend row</h2>
+    <p>Sits in a stage header, decoding the visual states used on that stage.</p>
+    <div class="legend">
+      <span class="k-new"><i></i>new piece</span>
+      <span class="k-lit"><i></i>on this journey</span>
+      <span class="k-dim"><i></i>dimmed</span>
+      <span class="k-green"><i></i>healthy</span>
+      <span class="k-amber"><i></i>at risk</span>
+    </div>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;div class="legend"&gt;
+  &lt;span class="k-new"&gt;&lt;i&gt;&lt;/i&gt;new piece&lt;/span&gt;
+  &lt;span class="k-lit"&gt;&lt;i&gt;&lt;/i&gt;on this journey&lt;/span&gt;
+  &lt;span class="k-dim"&gt;&lt;i&gt;&lt;/i&gt;dimmed&lt;/span&gt;
+&lt;/div&gt;</code></pre>
+    </details>
+  </section>
+
+  <!-- ============ Fullbleed stage demo (lives outside the prose column) ============ -->
+  <section id="stage" class="fullbleed demo" role="group" aria-label="Stage demo">
+  <div class="stage-head">
+    <span class="crumb"><b>Fullbleed stage</b> · dot-grid, full width — where mini worlds live</span>
+    <span class="spacer"></span>
+    <div class="legend">
+      <span class="k-new"><i></i>new piece</span>
+      <span class="k-dim"><i></i>unchanged</span>
+    </div>
+    <button type="button" data-fullscreen="#stage"><svg class="icon"><use href="#i-expand"/></svg> Fullscreen</button>
+  </div>
+  <div class="stage-body">
+    <div class="stage-band">
+      <span class="band-label">Brains — decides things</span>
+      <div class="blocks">
+        <div class="block"><svg class="icon"><use href="#i-bolt"/></svg> <b>Call engine</b><span class="caption">runs the live calls</span></div>
+        <button type="button" class="block is-new"><svg class="icon"><use href="#i-clock"/></svg> <b>Lease keeper</b><span class="sub"><svg class="icon"><use href="#i-puzzle"/></svg> the new piece</span></button>
+        <div class="block"><svg class="icon"><use href="#i-wallet"/></svg> <b>Billing</b><span class="caption">works out what's owed</span></div>
+      </div>
+    </div>
+    <div class="readout">
+      <span>clock <b>0:42</b></span>
+      <span>live leases <b>128</b></span>
+      <span>cost so far <b>$0.13</b></span>
+      <span>zombies <b class="hot">0</b></span>
+    </div>
+    <p class="caption" style="margin-top:1rem">Real mini worlds keep <code>min-height: 100dvh</code> (drop the <code>demo</code> class) and never sit in the prose column — fidelity dies at 720px. Stage anatomy: head row (crumb · legend · fullscreen), dashed responsibility bands with floating labels, blocks with icons, a stat readout strip.</p>
+    <details class="src" style="max-width:720px"><summary>Source</summary>
+<pre><code>&lt;section id="world" class="fullbleed"&gt;
+  &lt;div class="stage-head"&gt;
+    &lt;span class="crumb"&gt;&lt;b&gt;Title&lt;/b&gt; · one-line framing&lt;/span&gt;
+    &lt;span class="spacer"&gt;&lt;/span&gt;
+    &lt;div class="legend"&gt;&lt;span class="k-new"&gt;&lt;i&gt;&lt;/i&gt;new piece&lt;/span&gt;&lt;/div&gt;
+    &lt;button type="button" data-fullscreen="#world"&gt;&lt;svg class="icon"&gt;&lt;use href="#i-expand"/&gt;&lt;/svg&gt; Fullscreen&lt;/button&gt;
+  &lt;/div&gt;
+  &lt;div class="stage-body"&gt;
+    &lt;div class="stage-band"&gt;
+      &lt;span class="band-label"&gt;Layer name&lt;/span&gt;
+      &lt;div class="blocks"&gt;
+        &lt;div class="block"&gt;&lt;svg class="icon"&gt;&lt;use href="#i-bolt"/&gt;&lt;/svg&gt; &lt;b&gt;Block&lt;/b&gt;&lt;span class="caption"&gt;its job&lt;/span&gt;&lt;/div&gt;
+        &lt;button type="button" class="block is-new"&gt;…&lt;/button&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;div class="readout"&gt;&lt;span&gt;clock &lt;b&gt;0:42&lt;/b&gt;&lt;/span&gt;&lt;/div&gt;
+  &lt;/div&gt;
+&lt;/section&gt;
+
+&lt;script&gt;
+  document.querySelectorAll("[data-fullscreen]").forEach((b) =&gt;
+    b.addEventListener("click", () =&gt;
+      document.fullscreenElement
+        ? document.exitFullscreen()
+        : document.querySelector(b.dataset.fullscreen).requestFullscreen()));
+&lt;/script&gt;</code></pre>
+    </details>
+  </div>
+  </section>
+
+  <section id="scorecard">
+    <h2><svg class="icon"><use href="#i-check"/></svg> Scorecard — promised vs delivered</h2>
+    <p>The debrief's reckoning against its spec: every promise gets a row and a verdict. Kept = green, changed = amber (say why), dropped = red (say why).</p>
+    <div class="scorecard">
+      <div class="row head"><span>Promised (spec)</span><span>Delivered (debrief)</span><span>Verdict</span></div>
+      <div class="row"><span>Leases expire machines within one TTL</span><span>Expiry lands in ≤ 1 TTL; median 40 s</span><span class="badge green">kept</span></div>
+      <div class="row"><span>5-minute TTL</span><span>Shipped 15-minute TTL — renewal storms at 5 min crashed the keeper</span><span class="badge amber">changed</span></div>
+      <div class="row"><span>Admin console lease browser</span><span>Cut for v1; leases visible via ledger query only</span><span class="badge red">dropped</span></div>
+    </div>
+    <details class="src"><summary>Source</summary>
+<pre><code>&lt;div class="scorecard"&gt;
+  &lt;div class="row head"&gt;&lt;span&gt;Promised (spec)&lt;/span&gt;&lt;span&gt;Delivered (debrief)&lt;/span&gt;&lt;span&gt;Verdict&lt;/span&gt;&lt;/div&gt;
+  &lt;div class="row"&gt;&lt;span&gt;…&lt;/span&gt;&lt;span&gt;…&lt;/span&gt;&lt;span class="badge green"&gt;kept&lt;/span&gt;&lt;/div&gt;
+  &lt;div class="row"&gt;&lt;span&gt;…&lt;/span&gt;&lt;span&gt;… — why&lt;/span&gt;&lt;span class="badge amber"&gt;changed&lt;/span&gt;&lt;/div&gt;
+  &lt;div class="row"&gt;&lt;span&gt;…&lt;/span&gt;&lt;span&gt;… — why&lt;/span&gt;&lt;span class="badge red"&gt;dropped&lt;/span&gt;&lt;/div&gt;
+&lt;/div&gt;</code></pre>
+    </details>
+  </section>
+
+  <section id="rules">
+    <h2><svg class="icon"><use href="#i-shield"/></svg> Rules</h2>
+    <ul>
+      <li><b>Self-contained.</b> Everything inline; the file opens from disk. The only allowed external dependency is the Mermaid CDN script, and only on pages that actually contain Mermaid diagrams.</li>
+      <li><b>One accent.</b> Notion blue for links/emphasis/new; amber for decisions and risks; green for done; red only for hard failures. No gradients, no new colors, no display fonts.</li>
+      <li><b>Borders over shadows.</b> Hairlines and 8px rounding define surfaces; shadows only on floating elements (tooltips).</li>
+      <li><b>Icons are inline SVG</b> stroking <code>currentColor</code> — never icon fonts or CDNs. Visual texture on headings, statuses, and cards; no screenful of pure text.</li>
+      <li><b>Calm motion.</b> Nothing autoplays; movement is direct feedback to the reader's own interaction. Honor <code>prefers-reduced-motion</code>.</li>
+      <li><b>Every document defines its jargon</b> with <code>.term</code> hover definitions, keyboard-focusable.</li>
+      <li><b>Prose at 720px;</b> tables and diagrams may take <code>.wide</code>; mini worlds take <code>.fullbleed</code> (full height, dot-grid, fullscreen toggle) — never the prose column.</li>
+      <li><b>System views match <code>~/.pi/agent/packages/portable-pi-setup/support/examples/</code></b> — atlas (where does it live?), metro (what changes?), lifecycle (what happens over time?). A bland box-and-arrow substitute is below the bar.</li>
+      <li><b>Both themes, always.</b> Every color is a token; verify light and dark before shipping.</li>
+    </ul>
+    <p class="caption">Canon prose lives in <code>~/.pi/agent/packages/portable-pi-setup/support/html-template.md</code>; this file is the rendered proof. When a new pattern earns its place, add it here and keep this page the best example of itself.</p>
+  </section>
+</main>
+
+<script>
+  document.querySelectorAll("[data-fullscreen]").forEach((b) =>
+    b.addEventListener("click", () =>
+      document.fullscreenElement
+        ? document.exitFullscreen()
+        : document.querySelector(b.dataset.fullscreen).requestFullscreen()));
+
+  document.querySelectorAll("[data-toggle-pressed]").forEach((b) =>
+    b.addEventListener("click", () =>
+      b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true"))));
+</script>
+</body>
+</html>

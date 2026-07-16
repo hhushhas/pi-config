@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <style>
+    .background { fill: #f5f4f1; }
+    .book { fill: none; stroke: #37352f; }
+    .accent { fill: #2383e2; }
+    @media (prefers-color-scheme: dark) {
+      .background { fill: #232323; }
+      .book { stroke: #e3e2e0; }
+      .accent { fill: #529cca; }
+    }
+  </style>
+  <rect class="background" x="2" y="2" width="60" height="60" rx="13"/>
+  <path class="book" d="M17 18.5A7.5 7.5 0 0 1 24.5 11H48v35H24.5A7.5 7.5 0 0 0 17 53.5v-35Z" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path class="book" d="M17 53.5a7.5 7.5 0 0 0 7.5 7.5H48v-7.5" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle class="accent" cx="47" cy="17" r="7"/>
+</svg>

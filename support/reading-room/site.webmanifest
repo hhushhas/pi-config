@@ -1,0 +1,17 @@
+{
+  "name": "Reading Room",
+  "short_name": "Reading Room",
+  "description": "A local queue for reviewing specs and debriefs.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#191919",
+  "theme_color": "#191919",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chalk — where the new piece fits</title>
+<style>
+  :root {
+    --bg: #faf9f7; --fg: #37352f; --muted: #9b9a97; --line: #e8e6e1;
+    --card: #f3f1ec; --accent: #2383e2; --amber: #d9730d; --green: #448361; --red: #d44c47;
+    --glow: color-mix(in srgb, var(--accent) 30%, transparent);
+    --lit: color-mix(in srgb, var(--accent) 9%, var(--card));
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #191919; --fg: #e3e2e0; --muted: #9b9b9b; --line: #2f2f2f;
+      --card: #232323; --accent: #529cca; --amber: #cb7b37; --green: #4f9768; --red: #de5550;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg); margin: 0; -webkit-font-smoothing: antialiased;
+    font: 16px/1.65 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  main { display: grid; grid-template-columns: 1fr min(720px, calc(100% - 3rem)) 1fr; padding: 3rem 0 6rem; }
+  main > * { grid-column: 2; min-width: 0; }
+  h1 { font-size: 1.75rem; font-weight: 600; line-height: 1.3; margin: 0 0 .5rem; }
+  .kicker { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 .25rem; }
+  .caption { color: var(--muted); font-size: .85rem; }
+  .badge { display: inline-block; padding: .1rem .6rem; border-radius: 999px; font-size: .75rem; border: 1px solid var(--line); color: var(--muted); vertical-align: middle; }
+  .badge.accent { color: var(--accent); border-color: var(--accent); }
+  .badge.green { color: var(--green); border-color: var(--green); }
+  .badge.amber { color: var(--amber); border-color: var(--amber); }
+  button { font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: .35rem .9rem; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  .icon { width: 1.1em; height: 1.1em; vertical-align: -.18em; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .term { position: relative; border-bottom: 1px dotted var(--muted); cursor: help; }
+  .term:hover::after, .term:focus::after {
+    content: attr(data-def); position: absolute; left: 0; top: calc(100% + 4px); z-index: 30;
+    width: max-content; max-width: 320px; padding: .5rem .75rem; font-size: .85rem; line-height: 1.4;
+    background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.15);
+  }
+
+  /* ---------- Atlas stage ---------- */
+  .fullbleed {
+    grid-column: 1 / -1; width: 100%; padding: 2.5rem clamp(1rem, 3vw, 3rem) 3rem;
+    background: var(--card);
+    background-image: radial-gradient(color-mix(in srgb, var(--muted) 20%, transparent) 1px, transparent 1px);
+    background-size: 24px 24px;
+    border-block: 1px solid var(--line);
+  }
+  :fullscreen { background: var(--bg); overflow-y: auto; }
+  .atlas-head { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; max-width: 1240px; margin: 0 auto 1.5rem; }
+  .atlas-head .crumb { font-size: .85rem; color: var(--muted); }
+  .atlas-head .crumb b { color: var(--fg); font-weight: 600; }
+  .atlas-head .spacer { flex: 1; }
+  .legend { display: flex; gap: 1rem; font-size: .78rem; color: var(--muted); align-items: center; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: .7rem; height: .7rem; border-radius: 3px; margin-right: .3rem; vertical-align: -1px; border: 1px solid var(--line); background: var(--bg); }
+  .legend .k-new i { border-color: var(--accent); box-shadow: 0 0 6px var(--glow); }
+  .legend .k-lit i { background: var(--lit); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  .legend .k-dim i { opacity: .35; }
+
+  .stage { position: relative; max-width: 1240px; margin: 0 auto; }
+  #wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+  .band { position: relative; z-index: 1; border: 1px dashed color-mix(in srgb, var(--muted) 35%, transparent); border-radius: 14px; padding: 1.9rem 1.25rem 1.1rem; margin-bottom: 3.4rem; }
+  .band:last-child { margin-bottom: 0; }
+  .band > h3 {
+    position: absolute; top: -.82rem; left: 1rem; margin: 0; padding: 0 .6rem;
+    background: var(--card); color: var(--muted); display: flex; align-items: center; gap: .4rem;
+    font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em;
+  }
+  .band > h3 .icon { width: .95em; height: .95em; }
+  .band .row { display: flex; gap: 1.15rem; flex-wrap: wrap; justify-content: center; }
+
+  .block {
+    position: relative; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: .55rem;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    padding: .55rem .8rem; min-width: 9.5rem; cursor: default; text-align: left;
+    transition: opacity .25s, box-shadow .25s, border-color .25s, background .25s;
+  }
+  .block .b-icon { color: var(--muted); display: grid; place-items: center; }
+  .block .b-icon .icon { width: 1.25rem; height: 1.25rem; }
+  .block .b-name { font-size: .9rem; font-weight: 550; line-height: 1.25; }
+  .block .b-sub { display: block; font-size: .72rem; color: var(--muted); font-weight: 400; }
+  .block:hover, .block:focus-visible { border-color: var(--muted); }
+  .block:not(.is-new):hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,.08); }
+  .block:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .block.is-new { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 14px var(--glow); cursor: pointer; }
+  .block.is-new .b-icon { color: var(--accent); }
+  .block.is-changed { border-color: color-mix(in srgb, var(--amber) 55%, var(--line)); }
+  .block.is-changed .b-icon { color: var(--amber); }
+  .seam { position: absolute; inset: -5px; border: 2px dashed var(--accent); border-radius: 13px; opacity: .7; pointer-events: none; }
+  .fused .seam { border-style: solid; opacity: .28; }
+  .puzzle-tab { position: absolute; top: -11px; right: 12px; color: var(--accent); background: var(--bg); border-radius: 50%; }
+
+  .stage.rippling .block { opacity: .3; }
+  .stage.rippling .block.lit { opacity: 1; background: var(--lit); }
+  .stage.rippling .block.is-new { opacity: 1; }
+  .stage.rippling .band { border-color: color-mix(in srgb, var(--muted) 18%, transparent); }
+
+  .wire { stroke: var(--muted); stroke-width: 1.5; fill: none; opacity: .55; transition: opacity .25s, stroke .25s; }
+  .wire.new { stroke: var(--accent); stroke-width: 2; opacity: .9; filter: drop-shadow(0 0 3px var(--glow)); }
+  .wire-arrow { stroke: var(--muted); stroke-width: 1.5; fill: none; opacity: .55; transition: opacity .25s; }
+  .wire-arrow.new { stroke: var(--accent); opacity: .9; }
+  .wire-dot { fill: var(--muted); opacity: .55; transition: opacity .25s; }
+  .wire-dot.new { fill: var(--accent); opacity: .9; }
+  .stage.rippling :is(.wire, .wire-arrow, .wire-dot) { opacity: .12; }
+  .stage.rippling :is(.wire, .wire-arrow, .wire-dot).lit { opacity: 1; }
+  .wire-flow { stroke: var(--accent); stroke-width: 2; fill: none; stroke-dasharray: 5 9; opacity: 0; pointer-events: none; }
+  .stage.rippling .wire-flow.lit { opacity: .9; animation: flow 1.2s linear infinite; }
+  @keyframes flow { to { stroke-dashoffset: -14; } }
+  .wire-label { font-size: 11px; fill: var(--muted); opacity: 0; transition: opacity .25s; }
+  .stage.rippling .wire-label.lit { opacity: 1; }
+  .wire-label.new { fill: var(--accent); }
+
+  /* Hidden state for story mode */
+  .stage.story-before .block.is-new { visibility: hidden; }
+  .stage.story-before .slot { visibility: visible; }
+  .slot {
+    visibility: hidden; position: absolute; inset: 0; border: 2px dashed var(--muted); border-radius: 10px;
+    display: grid; place-items: center; color: var(--muted); font-size: .78rem; background: var(--card);
+  }
+  .stage.story-before :is(.wire, .wire-label, .wire-dot, .wire-arrow).new { opacity: 0; }
+  .wire.drawing { transition: none; }
+
+  /* tooltip */
+  #tip {
+    position: absolute; z-index: 40; max-width: 300px; padding: .55rem .8rem; border-radius: 8px;
+    background: var(--bg); border: 1px solid var(--line); box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    font-size: .83rem; line-height: 1.45; pointer-events: none; opacity: 0; transition: opacity .15s;
+  }
+  #tip.show { opacity: 1; }
+  #tip .t-name { font-weight: 600; }
+  #tip .t-state { display: block; margin-top: .25rem; font-size: .74rem; }
+  #tip .t-state.new { color: var(--accent); } #tip .t-state.changed { color: var(--amber); } #tip .t-state.same { color: var(--muted); }
+
+  /* zoom panel */
+  #zoom {
+    position: absolute; inset: 0; z-index: 20; background: color-mix(in srgb, var(--card) 92%, transparent);
+    backdrop-filter: blur(6px); border-radius: 14px; padding: 1.25rem; display: none;
+  }
+  #zoom.open { display: block; }
+  #zoom .z-inner { max-width: 640px; margin: 0 auto; }
+  #zoom .z-blocks { display: grid; gap: .75rem; margin-top: 1rem; }
+  .z-card { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: .8rem 1rem; display: grid; grid-template-columns: auto 1fr; gap: .7rem; align-items: start; }
+  .z-card .b-icon { color: var(--accent); margin-top: .15rem; }
+  .z-card p { margin: .15rem 0 0; font-size: .88rem; color: var(--muted); }
+
+  /* story narration */
+  #story-bar { display: none; max-width: 1080px; margin: 1.25rem auto 0; align-items: center; gap: 1rem; }
+  #story-bar.open { display: flex; flex-wrap: wrap; }
+  #story-text { flex: 1; min-width: 260px; font-size: .95rem; }
+  #story-text b { color: var(--accent); }
+  .dots { display: flex; gap: .35rem; }
+  .dots i { width: .5rem; height: .5rem; border-radius: 50%; background: var(--line); }
+  .dots i.on { background: var(--accent); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/><path d="M9.5 12l2 2 3.5-4"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="M15 10l6-3v10l-6-3"/></symbol>
+  <symbol id="i-card" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="2.8"/><path d="M4 5.5V18c0 1.6 3.6 2.9 8 2.9s8-1.3 8-2.9V5.5M4 12c0 1.6 3.6 2.9 8 2.9s8-1.3 8-2.9"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 1 1 .8-8.9A6 6 0 0 1 19 11a3.5 3.5 0 0 1-1 7z"/></symbol>
+  <symbol id="i-rec" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0-5.6 4.9L4 16.3V20h3.7l4.9-4.9a4 4 0 0 0 4.9-5.6L14.6 12l-2.6-2.6z"/></symbol>
+  <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M10 3h4v3.2a1.8 1.8 0 1 0 3.6 0H21v4h-3.2a1.8 1.8 0 1 0 0 3.6H21v4h-4v-3.2a1.8 1.8 0 1 0-3.6 0V21H9v-3.2a1.8 1.8 0 1 0-3.6 0H3v-4h3.2a1.8 1.8 0 1 0 0-3.6H3V7h4V3z" transform="scale(.9) translate(1.3 1.3)"/></symbol>
+  <symbol id="i-ledger" viewBox="0 0 24 24"><path d="M5 3h13a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H5z"/><path d="M5 3v18M9 8h6M9 12h6"/></symbol>
+  <symbol id="i-zoom" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5M11 8.5v5M8.5 11h5"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 3H3v6M15 3h6v6M9 21H3v-6M15 21h6v-6"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-5.5 8-5.5s6.5 1.5 8 5.5"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="10" y="10" width="4" height="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l2 2M19 5l-2 2M5 19l2-2M19 19l-2-2"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.8 2.6 4 5.6 4 9s-1.2 6.4-4 9c-2.8-2.6-4-5.6-4-9s1.2-6.4 4-9z"/></symbol>
+</svg>
+
+<main>
+  <p class="kicker">System atlas · example artifact</p>
+  <h1>Chalk — where the new piece fits</h1>
+  <p>
+    This is the whole of <span class="term" tabindex="0" data-def="The video-calling product this example is about. Every box below is one part of it.">Chalk</span>,
+    drawn as a map. The glowing puzzle piece is what this change adds: the
+    <b>Lease keeper</b> <span class="badge accent">new</span> — the part that hands out time-limited permits for
+    <span class="term" tabindex="0" data-def="Rented computers in a data center that actually run the video calls.">cloud machines</span>,
+    so nothing keeps running (or billing) forever by accident. Amber boxes were touched by the change; everything else is untouched.
+  </p>
+  <p class="caption">
+    Hover any box to see its job in plain words · hover the glowing piece to see its ripple ·
+    click it to look inside · switch to <b>Story</b> to watch it snap in.
+  </p>
+</main>
+
+<section class="fullbleed" id="atlas">
+  <div class="atlas-head">
+    <span class="crumb" id="crumb"><b>Chalk</b> · the whole system</span>
+    <span class="spacer"></span>
+    <div class="legend">
+      <span class="k-new"><i></i>new piece</span>
+      <span class="k-lit"><i></i>feels the change</span>
+      <span class="k-dim"><i></i>untouched</span>
+    </div>
+    <button id="mode-explore" aria-pressed="true">Explore</button>
+    <button id="mode-story" aria-pressed="false">Story</button>
+    <button data-fullscreen="#atlas" title="Fullscreen"><svg class="icon"><use href="#i-expand"/></svg></button>
+  </div>
+
+  <div class="stage" id="stage">
+    <svg id="wires" aria-hidden="true"></svg>
+    <!-- bands + blocks are rendered by JS from the data below -->
+    <div id="zoom" role="dialog" aria-label="Inside the Lease keeper">
+      <div class="z-inner">
+        <p class="kicker" id="zoom-crumb">Chalk ▸ Lease keeper</p>
+        <h1 style="font-size:1.25rem" id="zoom-title"></h1>
+        <p class="caption" id="zoom-sub"></p>
+        <div class="z-blocks" id="zoom-blocks"></div>
+        <p style="margin-top:1rem"><button id="zoom-back">← Back to the whole system</button></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="story-bar">
+    <button class="primary" id="story-next">▶ Snap the piece in</button>
+    <p id="story-text">The system has a gap: machines get started for calls, but nothing ever <em>has</em> to switch them off. A forgotten machine runs — and bills — forever.</p>
+    <div class="dots" id="story-dots"></div>
+  </div>
+
+  <div id="tip" role="status"><span class="t-name"></span><span class="t-job"></span><span class="t-state"></span></div>
+</section>
+
+<main style="padding-top:2rem">
+  <p class="caption">
+    Example artifact for the debrief/spec templates: an architecture-aware view of the entire system with the change
+    shown as a piece snapping into place — not a flat diagram. Everything here uses the shared design tokens,
+    inline SVG icons, hover definitions, ripple highlighting, zoom-in internals, and a narrated story mode.
+  </p>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- data: the whole system ----------
+  const LAYERS = [
+    { id: "touch", name: "What users touch", icon: "i-user" },
+    { id: "brains", name: "The brains", icon: "i-cpu" },
+    { id: "data", name: "Where data lives", icon: "i-db" },
+    { id: "world", name: "Outside world", icon: "i-globe" },
+  ];
+
+  const BLOCKS = [
+    { id: "web",     layer: "touch",  name: "Web app",        icon: "i-monitor", state: "same",    job: "The Chalk website people open in a browser to join calls." },
+    { id: "mobile",  layer: "touch",  name: "Mobile app",     icon: "i-phone",   state: "same",    job: "The phone app — same calls, smaller screen." },
+    { id: "admin",   layer: "touch",  name: "Admin console",  icon: "i-wrench",  state: "same",    job: "Where the team configures Chalk and watches its health." },
+    { id: "signin",  layer: "brains", name: "Sign-in desk",   icon: "i-shield",  state: "same",    job: "Checks who you are before letting you in." },
+    { id: "engine",  layer: "brains", name: "Call engine",    icon: "i-video",   state: "changed", job: "Runs the live calls: joins people, moves audio and video.", touched: "Now asks the Lease keeper for a machine instead of grabbing one directly." },
+    { id: "lease",   layer: "brains", name: "Lease keeper",   icon: "i-clock",   state: "new",     job: "Hands out time-limited permits for cloud machines. When a permit expires, the machine must wind down — capacity is forced to zero.", sub: "the new piece" },
+    { id: "billing", layer: "brains", name: "Billing",        icon: "i-card",    state: "changed", job: "Works out what each customer owes.", touched: "Now charges only for machines holding a live permit — expired ones can no longer bill." },
+    { id: "rec",     layer: "brains", name: "Recording",      icon: "i-rec",     state: "same",    job: "Saves calls that people chose to record." },
+    { id: "people",  layer: "data",   name: "People",         icon: "i-db",      state: "same",    job: "The list of accounts: who exists and what they may do." },
+    { id: "sessions",layer: "data",   name: "Sessions",       icon: "i-db",      state: "changed", job: "The record of every call: who joined, when, on which machine.", touched: "Each session now stores which permit it ran under." },
+    { id: "ledger",  layer: "data",   name: "Ledger",         icon: "i-ledger",  state: "changed", job: "The money book: every charge, ordered and permanent.", touched: "Gains one line per permit, so every charge can be traced to one." },
+    { id: "pay",     layer: "world",  name: "Payment provider", icon: "i-card",  state: "same",    job: "The outside company that actually moves the money." },
+    { id: "cloud",   layer: "world",  name: "Cloud machines", icon: "i-cloud",   state: "changed", job: "Rented computers that run the calls.", touched: "Started and stopped only through Lease keeper permits now." },
+  ];
+
+  const WIRES = [
+    { from: "web",     to: "engine",  label: "join a call" },
+    { from: "mobile",  to: "engine",  label: "join a call" },
+    { from: "admin",   to: "billing", label: "review charges" },
+    { from: "web",     to: "signin",  label: "log in" },
+    { from: "signin",  to: "people",  label: "look up account" },
+    { from: "engine",  to: "sessions",label: "write call record" },
+    { from: "rec",     to: "sessions",label: "attach recording" },
+    { from: "billing", to: "pay",     label: "charge card" },
+    { from: "billing", to: "ledger",  label: "book the charge" },
+    { from: "engine",  to: "lease",   label: "ask for a machine", isNew: true },
+    { from: "lease",   to: "cloud",   label: "grant / expire permits", isNew: true },
+    { from: "billing", to: "lease",   label: "is this permit live?", isNew: true },
+    { from: "lease",   to: "ledger",  label: "record each permit", isNew: true },
+  ];
+
+  const INTERNALS = {
+    lease: {
+      title: "Inside the Lease keeper",
+      sub: "Three small parts do the work; all three are new.",
+      parts: [
+        { icon: "i-puzzle", name: "Grant desk",  text: "Issues a permit when the Call engine asks for a machine — never open-ended, always with an expiry time." },
+        { icon: "i-clock",  name: "Expiry clock", text: "Watches every permit. The moment one runs out, it orders the machine to wind down. Even if winding down fails, the permit still counts as dead — capacity is forced to zero either way." },
+        { icon: "i-ledger", name: "Book-keeper", text: "Writes one line to the Ledger per permit, so Billing and audits can trace every charge back to a real, time-boxed grant." },
+      ],
+    },
+  };
+
+  const STORY = [
+    { text: "The system has a gap: machines get started for calls, but nothing ever <b>has</b> to switch them off. A forgotten machine runs — and bills — forever.", btn: "▶ Snap the piece in" },
+    { text: "<b>Click.</b> The Lease keeper snaps into the brains layer. From now on, nobody touches a cloud machine without a time-limited permit from it.", btn: "Next: wire it up →" },
+    { text: "Wire one: the <b>Call engine</b> stops grabbing machines directly — it asks the Lease keeper, and gets a permit with an expiry time.", btn: "Next wire →", wire: 9 },
+    { text: "Wire two: the Lease keeper <b>grants and expires</b> permits on the cloud machines themselves. An expired permit forces the machine to wind down.", btn: "Next wire →", wire: 10 },
+    { text: "Wires three and four: <b>Billing</b> checks each permit is live before charging, and every permit is written into the <b>Ledger</b> — every charge traceable, nothing billable forever.", btn: "Finish →", wire: 11 },
+    { text: "Done. The seam fuses: the piece is part of the system now. Switch to <b>Explore</b> and hover it to see everything it touches.", btn: "↺ Replay" },
+  ];
+
+  // ---------- render blocks ----------
+  const stage = document.getElementById("stage");
+  const zoomEl = document.getElementById("zoom");
+  const blockEls = {};
+
+  for (const layer of LAYERS) {
+    const band = document.createElement("div");
+    band.className = "band";
+    band.innerHTML = `<h3><svg class="icon"><use href="#${layer.icon}"/></svg>${layer.name}</h3><div class="row"></div>`;
+    const row = band.querySelector(".row");
+    for (const b of BLOCKS.filter((x) => x.layer === layer.id)) {
+      const el = document.createElement(b.state === "new" ? "button" : "div");
+      el.className = `block is-${b.state}`;
+      el.id = "b-" + b.id;
+      el.tabIndex = 0;
+      el.innerHTML = `
+        <span class="b-icon"><svg class="icon"><use href="#${b.icon}"/></svg></span>
+        <span class="b-name">${b.name}${b.sub ? `<span class="b-sub">${b.sub}</span>` : ""}</span>`;
+      if (b.state === "new") {
+        el.innerHTML += `<span class="seam"></span>
+          <span class="puzzle-tab"><svg class="icon" style="width:1.35rem;height:1.35rem"><use href="#i-puzzle"/></svg></span>
+          <span class="slot">the gap</span>`;
+        el.setAttribute("aria-label", b.name + " — new piece. Activate to look inside.");
+      }
+      row.appendChild(el);
+      blockEls[b.id] = el;
+    }
+    stage.insertBefore(band, zoomEl);
+  }
+
+  // ---------- wires (drawn from real element positions) ----------
+  const svg = document.getElementById("wires");
+  const NS = "http://www.w3.org/2000/svg";
+  const wireEls = [];
+
+  function drawWires() {
+    svg.innerHTML = "";
+    svg.setAttribute("viewBox", `0 0 ${stage.offsetWidth} ${stage.offsetHeight}`);
+    wireEls.length = 0;
+    const s = stage.getBoundingClientRect();
+    const rect = (el) => { const r = el.getBoundingClientRect(); return { left: r.left - s.left, top: r.top - s.top, w: r.width, h: r.height }; };
+
+    // Plan: spread multiple wires along each block edge instead of stacking them at the center.
+    const slots = {};
+    const plan = WIRES.map((w, i) => {
+      const ra = rect(blockEls[w.from]), rb = rect(blockEls[w.to]);
+      const down = rb.top > ra.top;
+      const aEdge = down ? "bottom" : "top", bEdge = down ? "top" : "bottom";
+      (slots[w.from + ":" + aEdge] ??= []).push({ i, end: "a", otherX: rb.left + rb.w / 2 });
+      (slots[w.to + ":" + bEdge] ??= []).push({ i, end: "b", otherX: ra.left + ra.w / 2 });
+      return { w, i, ra, rb, aEdge, bEdge };
+    });
+    const anchor = {};
+    for (const [key, list] of Object.entries(slots)) {
+      list.sort((p, q) => p.otherX - q.otherX);
+      const r = rect(blockEls[key.split(":")[0]]);
+      list.forEach((p, k) => {
+        (anchor[p.i] ??= {})[p.end] = r.left + (r.w * (k + 1)) / (list.length + 1);
+      });
+    }
+
+    for (const { w, i, ra, rb, aEdge, bEdge } of plan) {
+      const cls = w.isNew ? " new" : "";
+      const ax = anchor[i].a, ay = aEdge === "bottom" ? ra.top + ra.h : ra.top;
+      const bx = anchor[i].b, by = bEdge === "top" ? rb.top : rb.top + rb.h;
+      const midY = (ay + by) / 2;
+      const d = `M ${ax} ${ay} C ${ax} ${midY}, ${bx} ${midY}, ${bx} ${by}`;
+      const path = document.createElementNS(NS, "path");
+      path.setAttribute("d", d);
+      path.setAttribute("class", "wire" + cls);
+      svg.appendChild(path);
+      const flow = document.createElementNS(NS, "path");
+      flow.setAttribute("d", d);
+      flow.setAttribute("class", "wire-flow");
+      svg.appendChild(flow);
+      const dot = document.createElementNS(NS, "circle");
+      dot.setAttribute("cx", ax); dot.setAttribute("cy", ay); dot.setAttribute("r", 2.5);
+      dot.setAttribute("class", "wire-dot" + cls);
+      svg.appendChild(dot);
+      const dir = bEdge === "top" ? -1 : 1; // arrow tip sits on the block edge, pointing into it
+      const arrow = document.createElementNS(NS, "path");
+      arrow.setAttribute("d", `M ${bx - 4} ${by + 6 * dir} L ${bx} ${by} L ${bx + 4} ${by + 6 * dir}`);
+      arrow.setAttribute("class", "wire-arrow" + cls);
+      svg.appendChild(arrow);
+      const label = document.createElementNS(NS, "text");
+      label.setAttribute("x", (ax + bx) / 2 + 6);
+      label.setAttribute("y", midY - 4);
+      label.setAttribute("class", "wire-label" + cls);
+      label.textContent = w.label;
+      svg.appendChild(label);
+      wireEls[i] = { path, flow, label, dot, arrow };
+    }
+  }
+  drawWires();
+  addEventListener("resize", drawWires);
+
+  // ---------- tooltip ----------
+  const tip = document.getElementById("tip");
+  const STATE_LINE = { new: "★ New in this change", changed: "◆ Touched by this change", same: "Untouched" };
+  function showTip(b, el) {
+    tip.querySelector(".t-name").textContent = b.name + " — ";
+    tip.querySelector(".t-job").textContent = b.job + (b.touched ? " " + b.touched : "");
+    const st = tip.querySelector(".t-state");
+    st.textContent = STATE_LINE[b.state];
+    st.className = "t-state " + b.state;
+    const s = stage.getBoundingClientRect(), r = el.getBoundingClientRect();
+    tip.style.left = Math.min(r.left - s.left, stage.offsetWidth - 310) + "px";
+    tip.style.top = r.bottom - s.top + 8 + "px";
+    tip.classList.add("show");
+  }
+  const hideTip = () => tip.classList.remove("show");
+
+  // ---------- ripple ----------
+  const litBlocks = new Set(["lease"]);
+  const litWires = new Set();
+  WIRES.forEach((w, i) => {
+    if (w.isNew) { litWires.add(i); litBlocks.add(w.from); litBlocks.add(w.to); }
+  });
+  function setRipple(on) {
+    stage.classList.toggle("rippling", on);
+    for (const [id, el] of Object.entries(blockEls)) el.classList.toggle("lit", on && litBlocks.has(id));
+    wireEls.forEach((w, i) => {
+      const lit = on && litWires.has(i);
+      for (const part of [w.path, w.flow, w.label, w.dot, w.arrow]) part.classList.toggle("lit", lit);
+    });
+  }
+
+  // ---------- block events ----------
+  for (const b of BLOCKS) {
+    const el = blockEls[b.id];
+    el.addEventListener("mouseenter", () => { showTip(b, el); if (b.state === "new") setRipple(true); });
+    el.addEventListener("mouseleave", () => { hideTip(); if (b.state === "new") setRipple(false); });
+    el.addEventListener("focus", () => { showTip(b, el); if (b.state === "new") setRipple(true); });
+    el.addEventListener("blur", () => { hideTip(); if (b.state === "new") setRipple(false); });
+    if (INTERNALS[b.id]) el.addEventListener("click", () => openZoom(b.id));
+  }
+
+  // ---------- zoom ----------
+  const crumb = document.getElementById("crumb");
+  function openZoom(id) {
+    const z = INTERNALS[id];
+    document.getElementById("zoom-title").textContent = z.title;
+    document.getElementById("zoom-sub").textContent = z.sub;
+    document.getElementById("zoom-blocks").innerHTML = z.parts.map((p) => `
+      <div class="z-card">
+        <span class="b-icon"><svg class="icon"><use href="#${p.icon}"/></svg></span>
+        <div><b>${p.name}</b> <span class="badge accent">new</span><p>${p.text}</p></div>
+      </div>`).join("");
+    zoomEl.classList.add("open");
+    crumb.innerHTML = `<b>Chalk</b> ▸ ${BLOCKS.find((x) => x.id === id).name}`;
+    hideTip(); setRipple(false);
+    document.getElementById("zoom-back").focus();
+  }
+  document.getElementById("zoom-back").addEventListener("click", () => {
+    zoomEl.classList.remove("open");
+    crumb.innerHTML = `<b>Chalk</b> · the whole system`;
+    blockEls.lease.focus();
+  });
+
+  // ---------- story mode ----------
+  const storyBar = document.getElementById("story-bar");
+  const storyText = document.getElementById("story-text");
+  const storyBtn = document.getElementById("story-next");
+  const dots = document.getElementById("story-dots");
+  STORY.forEach(() => dots.appendChild(document.createElement("i")));
+  let step = 0;
+
+  function renderStory() {
+    const s = STORY[step];
+    storyText.innerHTML = s.text;
+    storyBtn.textContent = s.btn;
+    [...dots.children].forEach((d, i) => d.classList.toggle("on", i <= step));
+    stage.classList.toggle("story-before", step === 0);
+    blockEls.lease.classList.toggle("fused", step === STORY.length - 1);
+    // reveal new wires progressively: step index >= its reveal step
+    const revealed = new Set();
+    STORY.slice(0, step + 1).forEach((st) => { if (st.wire !== undefined) { revealed.add(st.wire); if (st.wire === 11) revealed.add(12); } });
+    WIRES.forEach((w, i) => {
+      if (!w.isNew) return;
+      const show = step >= 1 && (revealed.has(i) || step === STORY.length - 1);
+      const el = wireEls[i];
+      for (const part of [el.path, el.dot, el.arrow]) part.style.opacity = show ? "" : "0";
+      el.label.style.opacity = show ? "1" : "0";
+    });
+  }
+  storyBtn.addEventListener("click", () => { step = (step + 1) % STORY.length; renderStory(); });
+
+  function setMode(mode) {
+    const story = mode === "story";
+    document.getElementById("mode-story").setAttribute("aria-pressed", story);
+    document.getElementById("mode-explore").setAttribute("aria-pressed", !story);
+    storyBar.classList.toggle("open", story);
+    zoomEl.classList.remove("open");
+    setRipple(false); hideTip();
+    if (story) { step = 0; renderStory(); }
+    else {
+      stage.classList.remove("story-before");
+      WIRES.forEach((w, i) => {
+        if (!w.isNew) return;
+        const el = wireEls[i];
+        for (const part of [el.path, el.dot, el.arrow, el.label]) part.style.opacity = "";
+      });
+      blockEls.lease.classList.add("fused");
+    }
+  }
+  document.getElementById("mode-story").addEventListener("click", () => setMode("story"));
+  document.getElementById("mode-explore").addEventListener("click", () => setMode("explore"));
+
+  // ---------- fullscreen ----------
+  document.querySelectorAll("[data-fullscreen]").forEach((b) =>
+    b.addEventListener("click", () =>
+      document.fullscreenElement
+        ? document.exitFullscreen()
+        : document.querySelector(b.dataset.fullscreen).requestFullscreen()));
+  addEventListener("fullscreenchange", drawWires);
+})();
+</script>
+</body>
+</html>

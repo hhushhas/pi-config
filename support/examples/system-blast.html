@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chalk — what breaks, and how far it spreads</title>
+<style>
+  :root {
+    --bg: #faf9f7; --fg: #37352f; --muted: #9b9a97; --line: #e8e6e1;
+    --card: #f3f1ec; --accent: #2383e2; --amber: #d9730d; --green: #448361; --red: #d44c47;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #191919; --fg: #e3e2e0; --muted: #9b9b9b; --line: #2f2f2f;
+      --card: #232323; --accent: #529cca; --amber: #cb7b37; --green: #4f9768; --red: #de5550;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg); margin: 0; -webkit-font-smoothing: antialiased;
+    font: 16px/1.65 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  main { display: grid; grid-template-columns: 1fr min(720px, calc(100% - 3rem)) 1fr; padding: 3rem 0 6rem; }
+  main > * { grid-column: 2; min-width: 0; }
+  h1 { font-size: 1.75rem; font-weight: 600; line-height: 1.3; margin: 0 0 .5rem; }
+  .kicker { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 .25rem; }
+  .caption { color: var(--muted); font-size: .85rem; }
+  .badge { display: inline-block; padding: .1rem .6rem; border-radius: 999px; font-size: .75rem; border: 1px solid var(--line); color: var(--muted); vertical-align: middle; }
+  .badge.accent { color: var(--accent); border-color: var(--accent); }
+  button { font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: .35rem .9rem; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .icon { width: 1.1em; height: 1.1em; vertical-align: -.18em; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .term { position: relative; border-bottom: 1px dotted var(--muted); cursor: help; }
+  .term:hover::after, .term:focus::after {
+    content: attr(data-def); position: absolute; left: 0; top: calc(100% + 4px); z-index: 30;
+    width: max-content; max-width: 320px; padding: .5rem .75rem; font-size: .85rem; line-height: 1.4;
+    background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.15);
+  }
+
+  /* ---------- Simulator stage ---------- */
+  .fullbleed {
+    grid-column: 1 / -1; width: 100%; min-height: 100dvh; padding: 2.5rem clamp(1rem, 3vw, 3rem) 3rem;
+    background: var(--card);
+    background-image: radial-gradient(color-mix(in srgb, var(--muted) 20%, transparent) 1px, transparent 1px);
+    background-size: 24px 24px;
+    border-block: 1px solid var(--line);
+  }
+  :fullscreen { overflow-y: auto; }
+  .sim-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; max-width: 1280px; margin: 0 auto 1rem; }
+  .sim-head .h-label { font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-right: .2rem; }
+  .sim-head .spacer { flex: 1; }
+  .sim-head button { font-size: .85rem; padding: .3rem .75rem; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { border: none; border-radius: 0; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
+  .legend { display: flex; gap: .9rem; font-size: .78rem; color: var(--muted); align-items: center; flex-wrap: wrap; max-width: 1280px; margin: 0 auto 1.4rem; }
+  .legend i { display: inline-block; width: .7rem; height: .7rem; border-radius: 3px; margin-right: .3rem; vertical-align: -1px; border: 1px solid var(--line); background: var(--bg); }
+  .legend .k-dead i { border-color: var(--red); background: color-mix(in srgb, var(--red) 12%, var(--bg)); }
+  .legend .k-deg i { border-color: var(--amber); background: color-mix(in srgb, var(--amber) 12%, var(--bg)); }
+  .legend .k-net i { border-color: var(--green); background: color-mix(in srgb, var(--green) 12%, var(--bg)); }
+
+  .sim { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 1.25rem; max-width: 1280px; margin: 0 auto; align-items: start; }
+  @media (max-width: 980px) { .sim { grid-template-columns: 1fr; } }
+
+  .stage { position: relative; }
+  #wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+  .band { position: relative; z-index: 1; border: 1px dashed color-mix(in srgb, var(--muted) 35%, transparent); border-radius: 14px; padding: 1.9rem 1rem 1.05rem; margin-bottom: 3rem; }
+  .band:last-child { margin-bottom: 0; }
+  .band > h3 {
+    position: absolute; top: -.82rem; left: 1rem; margin: 0; padding: 0 .6rem;
+    background: var(--card); color: var(--muted); display: flex; align-items: center; gap: .4rem;
+    font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em;
+  }
+  .band > h3 .icon { width: .95em; height: .95em; }
+  .band .row { display: flex; gap: 1.05rem; flex-wrap: wrap; justify-content: center; }
+
+  .block {
+    position: relative; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: .55rem;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    padding: .55rem .8rem; min-width: 9rem; cursor: pointer; text-align: left;
+    transition: box-shadow .25s, border-color .25s, background .25s;
+  }
+  .block .b-icon { color: var(--muted); display: grid; place-items: center; }
+  .block .b-icon .icon { width: 1.25rem; height: 1.25rem; }
+  .block .b-name { font-size: .9rem; font-weight: 550; line-height: 1.25; }
+  .block .b-sub { display: block; font-size: .72rem; color: var(--muted); font-weight: 400; }
+  .block:hover, .block:focus-visible { border-color: var(--muted); box-shadow: 0 3px 10px rgba(0,0,0,.08); }
+  .block:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .block.is-new { border-color: var(--accent); }
+  .block.is-new .b-icon { color: var(--accent); }
+
+  .block .st-tag {
+    position: absolute; top: -9px; right: -7px; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--bg); border: 1.5px solid currentColor; display: none; place-items: center;
+  }
+  .block .st-tag .icon { width: .8rem; height: .8rem; }
+  .block.st-dead { border-color: var(--red); background: color-mix(in srgb, var(--red) 10%, var(--bg)); }
+  .block.st-dead .b-icon { color: var(--red); }
+  .block.st-dead .st-tag.tag-dead { display: grid; color: var(--red); }
+  .block.st-degraded { border-color: var(--amber); background: color-mix(in srgb, var(--amber) 9%, var(--bg)); }
+  .block.st-degraded .b-icon { color: var(--amber); }
+  .block.st-degraded .st-tag.tag-deg { display: grid; color: var(--amber); }
+  .block.st-root { box-shadow: 0 0 0 2px var(--red), 0 0 16px color-mix(in srgb, var(--red) 30%, transparent); }
+  .block.catching { border-color: var(--green); box-shadow: 0 0 0 1px var(--green), 0 0 12px color-mix(in srgb, var(--green) 30%, transparent); }
+  .block.catching .st-tag.tag-net { display: grid; color: var(--green); background: var(--bg); }
+  .block.ghost { border-style: dashed; opacity: .55; cursor: not-allowed; box-shadow: none; }
+  .block.ghost .b-icon { color: var(--muted); }
+
+  /* wires */
+  .wgroup { transition: opacity .3s; }
+  .wire { stroke: var(--muted); stroke-width: 1.5; fill: none; opacity: .55; }
+  .wire-arrow { stroke: var(--muted); stroke-width: 1.5; fill: none; opacity: .55; }
+  .wire-dot { fill: var(--muted); opacity: .55; }
+  .wire-label { font-size: 11px; fill: var(--muted); opacity: 0; transition: opacity .25s; }
+  .stage:hover .wire-label { opacity: .8; }
+  .wire-flow { stroke: var(--accent); stroke-width: 2; fill: none; stroke-dasharray: 5 9; opacity: 0; pointer-events: none; }
+  .stage.sim-on .wgroup { opacity: .13; }
+  .stage.sim-on .wgroup.g-on { opacity: 1; }
+  .stage.sim-on .wgroup.g-on .wire-label { opacity: 1; }
+  .wgroup.g-dead .wire { stroke: var(--red); stroke-width: 2; opacity: 1; }
+  .wgroup.g-dead :is(.wire-arrow) { stroke: var(--red); opacity: 1; }
+  .wgroup.g-dead .wire-dot { fill: var(--red); opacity: 1; }
+  .wgroup.g-dead .wire-label { fill: var(--red); }
+  .wgroup.g-deg .wire { stroke: var(--amber); stroke-width: 2; opacity: 1; }
+  .wgroup.g-deg :is(.wire-arrow) { stroke: var(--amber); opacity: 1; }
+  .wgroup.g-deg .wire-dot { fill: var(--amber); opacity: 1; }
+  .wgroup.g-deg .wire-label { fill: var(--amber); }
+  .wgroup.g-catch .wire { stroke: var(--green); stroke-width: 2; opacity: 1; }
+  .wgroup.g-catch :is(.wire-arrow) { stroke: var(--green); opacity: 1; }
+  .wgroup.g-catch .wire-dot { fill: var(--green); opacity: 1; }
+  .wgroup.g-catch .wire-label { fill: var(--green); }
+  .wgroup.g-dead .wire-flow { stroke: var(--red); }
+  .wgroup.g-deg .wire-flow { stroke: var(--amber); }
+  .wgroup.g-catch .wire-flow { stroke: var(--green); }
+  .wgroup.g-on .wire-flow { opacity: .9; animation: flow 1.1s linear infinite; }
+  @keyframes flow { to { stroke-dashoffset: -14; } }
+
+  .net-badge {
+    position: absolute; z-index: 5; transform: translate(-50%, -50%);
+    display: flex; align-items: center; gap: .3rem; padding: .18rem .55rem;
+    background: var(--bg); border: 1.5px solid var(--green); color: var(--green);
+    border-radius: 999px; font-size: .72rem; font-weight: 600; white-space: nowrap;
+    animation: pop .35s ease-out;
+  }
+  @keyframes pop { from { transform: translate(-50%, -50%) scale(.5); opacity: 0; } }
+
+  /* side panel */
+  .aside { display: flex; flex-direction: column; gap: .75rem; min-width: 0; }
+  .aside h4 { margin: 0; font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); display: flex; align-items: center; gap: .4rem; }
+  .aside h4 .spacer { flex: 1; }
+  .chip { background: var(--bg); border: 1px solid var(--line); border-left-width: 3px; border-radius: 10px; padding: .55rem .75rem; display: grid; gap: .15rem; transition: border-color .3s; }
+  .chip .c-head { display: flex; align-items: center; gap: .45rem; font-weight: 600; font-size: .87rem; }
+  .chip .c-word { margin-left: auto; font-size: .7rem; font-weight: 600; padding: .02rem .5rem; border: 1px solid currentColor; border-radius: 999px; }
+  .chip p { margin: 0; font-size: .79rem; color: var(--muted); line-height: 1.45; }
+  .chip.c-fine { border-left-color: var(--green); } .chip.c-fine .c-word { color: var(--green); }
+  .chip.c-deg { border-left-color: var(--amber); } .chip.c-deg .c-word { color: var(--amber); }
+  .chip.c-broken { border-left-color: var(--red); } .chip.c-broken .c-word { color: var(--red); }
+
+  #nlog { display: flex; flex-direction: column; gap: .5rem; overflow-y: auto; max-height: 44vh; padding-right: .2rem; }
+  .n-item {
+    display: grid; grid-template-columns: auto 1fr; gap: .5rem; align-items: start;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+    padding: .5rem .65rem; font-size: .83rem; line-height: 1.45;
+    animation: fadein .3s ease-out;
+  }
+  @keyframes fadein { from { opacity: 0; } }
+  .n-item .icon { margin-top: .2rem; }
+  .n-item p { margin: 0; }
+  .n-item.n-dead .icon { color: var(--red); }
+  .n-item.n-deg .icon { color: var(--amber); }
+  .n-item.n-catch { border-color: color-mix(in srgb, var(--green) 45%, var(--line)); }
+  .n-item.n-catch .icon { color: var(--green); }
+  .n-item.n-hint { background: none; border: none; color: var(--muted); font-size: .78rem; padding: 0 .2rem; }
+  .n-item.n-hint .icon { color: var(--muted); }
+
+  /* tooltip */
+  #tip {
+    position: absolute; z-index: 40; max-width: 300px; padding: .55rem .8rem; border-radius: 8px;
+    background: var(--bg); border: 1px solid var(--line); box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    font-size: .83rem; line-height: 1.45; pointer-events: none; opacity: 0; transition: opacity .15s;
+  }
+  #tip.show { opacity: 1; }
+  #tip .t-name { font-weight: 600; }
+  #tip .t-state { display: block; margin-top: .25rem; font-size: .74rem; color: var(--muted); }
+  #tip .t-state.dead { color: var(--red); }
+  #tip .t-state.degraded { color: var(--amber); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="M15 10l6-3v10l-6-3"/></symbol>
+  <symbol id="i-card" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="2.8"/><path d="M4 5.5V18c0 1.6 3.6 2.9 8 2.9s8-1.3 8-2.9V5.5M4 12c0 1.6 3.6 2.9 8 2.9s8-1.3 8-2.9"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 1 1 .8-8.9A6 6 0 0 1 19 11a3.5 3.5 0 0 1-1 7z"/></symbol>
+  <symbol id="i-rec" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/></symbol>
+  <symbol id="i-ledger" viewBox="0 0 24 24"><path d="M5 3h13a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H5z"/><path d="M5 3v18M9 8h6M9 12h6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/><path d="M9.5 12l2 2 3.5-4"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-5.5 8-5.5s6.5 1.5 8 5.5"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="10" y="10" width="4" height="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l2 2M19 5l-2 2M5 19l2-2M19 19l-2-2"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.8 2.6 4 5.6 4 9s-1.2 6.4-4 9c-2.8-2.6-4-5.6-4-9s1.2-6.4 4-9z"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L4.5 14H11l-1 8 8.5-12H12z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5L22 20H2z"/><path d="M12 10v4.5M12 17.3v.2"/></symbol>
+  <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 5v6h6"/><path d="M4.6 11a8 8 0 1 0 2.2-6.4L4 7"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 3H3v6M15 3h6v6M9 21H3v-6M15 21h6v-6"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24"><path d="M12 3v10.5"/><circle cx="9" cy="16.5" r="3"/><path d="M12 3l6 2v3l-6-2"/></symbol>
+</svg>
+
+<main>
+  <p class="kicker">System blast radius · example artifact</p>
+  <h1>Chalk — what breaks, and how far it spreads</h1>
+  <p>
+    The same system as the atlas — <span class="term" tabindex="0" data-def="The video-calling product this example is about. Every box below is one part of it.">Chalk</span> —
+    but now the question is failure. Click any part to kill it and watch its
+    <span class="term" tabindex="0" data-def="Everything that breaks or degrades as a consequence of one part failing — how far the damage travels along the wires.">blast radius</span>:
+    which parts die with it, which limp along, and where the damage stops. The <b>Lease keeper</b>
+    <span class="badge accent">the safety net</span> is what this change added — it hands out
+    <span class="term" tabindex="0" data-def="A time-limited grant to use one cloud machine. When it expires, the machine must wind down and can no longer bill.">permits</span>
+    for <span class="term" tabindex="0" data-def="Rented computers in a data center that actually run the video calls.">cloud machines</span>,
+    so several failures now stop at it instead of reaching the money. Flip to <b>Before the change</b> and the identical failure travels further.
+  </p>
+  <p class="caption">
+    Click a block to fail it (or press Enter on it) · fire a preset scenario · flip Before / After to watch
+    the net appear and disappear · hover any block for its job in plain words.
+  </p>
+</main>
+
+<section class="fullbleed" id="blast">
+  <div class="sim-head">
+    <span class="h-label">Scenarios</span>
+    <button class="preset" data-fail="engine"><svg class="icon"><use href="#i-bolt"/></svg> The Call engine crashes</button>
+    <button class="preset" data-fail="cloud"><svg class="icon"><use href="#i-bolt"/></svg> The cloud provider has an outage</button>
+    <button class="preset" data-fail="ledger"><svg class="icon"><use href="#i-bolt"/></svg> The Ledger is unreachable</button>
+    <span class="spacer"></span>
+    <span class="seg" role="group" aria-label="World">
+      <button id="mode-before" aria-pressed="false">Before the change</button>
+      <button id="mode-after" aria-pressed="true">After · with the net</button>
+    </span>
+    <button id="reset" title="Reset the simulation"><svg class="icon"><use href="#i-reset"/></svg> Reset</button>
+    <button data-fullscreen="#blast" title="Fullscreen"><svg class="icon"><use href="#i-expand"/></svg></button>
+  </div>
+
+  <div class="legend">
+    <span class="k-dead"><i></i>dead</span>
+    <span class="k-deg"><i></i>degraded</span>
+    <span><i></i>unaffected</span>
+    <span class="k-net"><i></i>caught by the net</span>
+  </div>
+
+  <div class="sim">
+    <div class="stage" id="stage">
+      <svg id="wires" aria-hidden="true"></svg>
+      <!-- bands + blocks rendered by JS -->
+    </div>
+
+    <div class="aside">
+      <h4><svg class="icon"><use href="#i-note"/></svg> What people feel</h4>
+      <div id="journeys"></div>
+      <h4 style="margin-top:.4rem"><svg class="icon"><use href="#i-bolt"/></svg> Blast log <span class="spacer"></span><span class="badge" id="mode-badge">after the change</span></h4>
+      <div id="nlog" role="log" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <div id="tip" role="status"><span class="t-name"></span><span class="t-job"></span><span class="t-state"></span></div>
+</section>
+
+<main style="padding-top:2rem">
+  <p class="caption">
+    Example artifact for the debrief/spec templates: a failure simulator over the whole system. Preset scenarios are
+    debrief findings turned into something you can trigger; the Before / After toggle turns "the new piece adds safety"
+    from a claim into a visible difference — the same click, a smaller crater.
+  </p>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- data ----------
+  const LAYERS = [
+    { id: "touch",  name: "What users touch", icon: "i-user" },
+    { id: "brains", name: "The brains",       icon: "i-cpu" },
+    { id: "data",   name: "Where data lives", icon: "i-db" },
+    { id: "world",  name: "Outside world",    icon: "i-globe" },
+  ];
+
+  const BLOCKS = [
+    { id: "web",     layer: "touch",  name: "Web app",          icon: "i-monitor", job: "The Chalk website people open in a browser to join calls.",
+      dead: "The Web app is down. Browser users are locked out; everything behind it hums on." },
+    { id: "mobile",  layer: "touch",  name: "Mobile app",       icon: "i-phone",   job: "The phone app — same calls, smaller screen.",
+      dead: "The Mobile app is down. Phone users are locked out; the browser still works." },
+    { id: "engine",  layer: "brains", name: "Call engine",      icon: "i-video",   job: "Runs the live calls: joins people, moves audio and video.",
+      dead: "The Call engine crashes. Nothing can move audio or video any more." },
+    { id: "lease",   layer: "brains", name: "Lease keeper",     icon: "i-clock",   isNew: true, sub: "the safety net",
+      job: "Hands out time-limited permits for cloud machines. When a permit expires, the machine must wind down — and can no longer bill.",
+      dead: "The Lease keeper goes down. No new permits can be granted — but every permit already out still carries its expiry time." },
+    { id: "billing", layer: "brains", name: "Billing",          icon: "i-card",    job: "Works out what each customer owes and charges them.",
+      dead: "Billing goes down. No charges go out; calls themselves are unaffected." },
+    { id: "rec",     layer: "brains", name: "Recording",        icon: "i-rec",     job: "Saves calls that people chose to record.",
+      dead: "Recording goes down. Calls continue as normal; nothing new gets saved." },
+    { id: "sessions",layer: "data",   name: "Sessions",         icon: "i-db",      job: "The record of every call: who joined, when, on which machine.",
+      dead: "The Sessions store is down. Call history can't be written or read." },
+    { id: "ledger",  layer: "data",   name: "Ledger",           icon: "i-ledger",  job: "The money book: every charge, ordered and permanent.",
+      dead: "The Ledger is unreachable. The money book can't take new lines." },
+    { id: "cloud",   layer: "world",  name: "Cloud machines",   icon: "i-cloud",   job: "Rented computers that actually run the calls — and cost money every minute they run.",
+      dead: "The cloud provider has an outage. Every rented machine is gone at once." },
+    { id: "pay",     layer: "world",  name: "Payment provider", icon: "i-card",    job: "The outside company that actually moves the money.",
+      dead: "The payment provider is down. Cards can't be charged." },
+  ];
+
+  // Wires are drawn arrows (who calls whom). mode: "a" = only after the change, "b" = only before.
+  const WIRES = [
+    /* 0 */ { from: "web",     to: "engine",   label: "join a call" },
+    /* 1 */ { from: "mobile",  to: "engine",   label: "join a call" },
+    /* 2 */ { from: "engine",  to: "lease",    label: "ask for a permit",        mode: "a" },
+    /* 3 */ { from: "lease",   to: "cloud",    label: "grant / expire permits",  mode: "a" },
+    /* 4 */ { from: "engine",  to: "cloud",    label: "grab machines directly",  mode: "b" },
+    /* 5 */ { from: "billing", to: "lease",    label: "is this permit live?",    mode: "a" },
+    /* 6 */ { from: "billing", to: "cloud",    label: "meter machine-hours",     mode: "b" },
+    /* 7 */ { from: "engine",  to: "sessions", label: "write call record" },
+    /* 8 */ { from: "rec",     to: "engine",   label: "tap the live call" },
+    /* 9 */ { from: "rec",     to: "sessions", label: "attach recording" },
+    /*10 */ { from: "billing", to: "ledger",   label: "book the charge" },
+    /*11 */ { from: "billing", to: "pay",      label: "charge the card" },
+    /*12 */ { from: "lease",   to: "ledger",   label: "record each permit",      mode: "a" },
+  ];
+
+  // Propagation rules: when `src` reaches at least `when`, `dst` becomes `then` (travelling along wire w).
+  // `catch: true` means the failure is stopped here (the net) instead of propagating.
+  // `origin` restricts a rule to specific root failures, so narration stays honest.
+  const RULES = [
+    { w: 8,  src: "engine", dst: "rec",     when: "dead",     then: "dead",
+      narr: "<b>Recording</b> taps the live call. No calls — nothing to record." },
+    { w: 0,  src: "engine", dst: "web",     when: "dead",     then: "degraded",
+      narr: "The <b>Web app</b> still loads, but every attempt to join a call fails — there's no engine to answer." },
+    { w: 1,  src: "engine", dst: "mobile",  when: "dead",     then: "degraded",
+      narr: "Phones see the same thing: the <b>Mobile app</b> opens, calls don't." },
+    { w: 2,  src: "engine", dst: "lease",   when: "dead",     then: "fine", mode: "a", catch: true,
+      narr: "<b>The net holds.</b> Every machine the engine took runs on a time-limited permit. The <b>Lease keeper</b>'s expiry clock winds each orphaned machine down on schedule — and its billing stops with it." },
+    { w: 4,  src: "engine", dst: "cloud",   when: "dead",     then: "degraded", mode: "b", origin: ["engine"],
+      narr: "The machines the engine grabbed are now orphans — nothing exists that <em>has</em> to switch them off. <b>Cloud machines</b> keep running, and the meter keeps spinning." },
+    { w: 6,  src: "cloud",  dst: "billing", when: "degraded", then: "degraded", mode: "b", origin: ["engine"], corrupt: true,
+      narr: "<b>Billing</b> meters the orphans as normal usage. Customers get charged for calls that ended when the engine died." },
+    { w: 4,  src: "cloud",  dst: "engine",  when: "dead",     then: "dead", mode: "b",
+      narr: "The <b>Call engine</b> grabbed machines directly and has no notion of expiry — live calls drop mid-sentence, and it can't even tell which machines are gone." },
+    { w: 6,  src: "cloud",  dst: "billing", when: "dead",     then: "degraded", mode: "b", origin: ["cloud"], corrupt: true,
+      narr: "<b>Billing</b> meters machine-hours straight from a provider it can no longer see. It keeps billing from stale numbers — phantom charges for machines that are gone." },
+    { w: 3,  src: "cloud",  dst: "lease",   when: "dead",     then: "degraded", mode: "a",
+      narr: "With no machines to govern, the <b>Lease keeper</b> can't grant new permits — but its expiry clock keeps ticking, so every outstanding permit still dies on schedule." },
+    { w: 5,  src: "lease",  dst: "billing", when: "degraded", then: "fine", mode: "a", origin: ["cloud"], catch: true,
+      narr: "<b>The net holds.</b> <b>Billing</b> checks each permit before charging, and the Lease keeper still knows exactly which permits are live. Dead machines stop billing the moment their permits expire — no phantom charges." },
+    { w: 2,  src: "lease",  dst: "engine",  when: "degraded", then: "degraded", mode: "a", origin: ["cloud"],
+      narr: "No new permits means no new calls: the <b>Call engine</b> winds down gracefully as running permits expire, instead of dropping everything at once." },
+    { w: 2,  src: "lease",  dst: "engine",  when: "dead",     then: "degraded", mode: "a",
+      narr: "The <b>Call engine</b> can't get a permit, so new calls can't start. Running calls keep the permits they already hold until expiry — graceful, not sudden." },
+    { w: 5,  src: "lease",  dst: "billing", when: "dead",     then: "degraded", mode: "a",
+      narr: "<b>Billing</b> can't verify permits, so it pauses charging rather than guess. Charges arrive late — never wrong." },
+    { w: 10, src: "billing",dst: "ledger",  when: "degraded", then: "degraded", mode: "b", origin: ["cloud", "engine"], corrupt: true,
+      narr: "The phantom charges get booked into the permanent <b>Ledger</b>. Unwinding them later takes an engineer and an apology." },
+    { w: 10, src: "ledger", dst: "billing", when: "dead",     then: "degraded",
+      narr: "<b>Billing</b> can't reach the Ledger, so charges queue up instead of failing. They'll book once it's back." },
+    { w: 12, src: "ledger", dst: "lease",   when: "dead",     then: "degraded", mode: "a",
+      narr: "The <b>Lease keeper</b>'s permit lines queue too — granting and expiring permits still works fine." },
+    { w: 7,  src: "sessions", dst: "engine", when: "dead",    then: "degraded",
+      narr: "Calls still run, but the <b>Call engine</b> can't write call history — nothing is being remembered." },
+    { w: 9,  src: "sessions", dst: "rec",    when: "dead",    then: "dead",
+      narr: "A recording must attach to a session record. With <b>Sessions</b> down, <b>Recording</b> drops everything." },
+    { w: 11, src: "pay",    dst: "billing", when: "dead",     then: "degraded",
+      narr: "Cards can't be charged. <b>Billing</b> queues everything and retries later — annoying, not dangerous." },
+    { w: 0,  src: "engine", dst: "web",     when: "degraded", then: "degraded",
+      narr: "The <b>Web app</b> works, but starting a new call fails — the engine is short of machines." },
+    { w: 1,  src: "engine", dst: "mobile",  when: "degraded", then: "degraded",
+      narr: "Same on phones: existing calls continue, new ones can't start." },
+    { w: 8,  src: "engine", dst: "rec",     when: "degraded", then: "degraded",
+      narr: "<b>Recording</b> still works — but only for the calls that are still running." },
+  ];
+
+  const RANK = { fine: 0, degraded: 1, dead: 2 };
+  const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const STAGE_MS = REDUCED ? 0 : 950;
+
+  // ---------- render blocks ----------
+  const stage = document.getElementById("stage");
+  const blockEls = {};
+  for (const layer of LAYERS) {
+    const band = document.createElement("div");
+    band.className = "band";
+    band.innerHTML = `<h3><svg class="icon"><use href="#${layer.icon}"/></svg>${layer.name}</h3><div class="row"></div>`;
+    const row = band.querySelector(".row");
+    for (const b of BLOCKS.filter((x) => x.layer === layer.id)) {
+      const el = document.createElement("button");
+      el.type = "button";
+      el.className = "block" + (b.isNew ? " is-new" : "");
+      el.id = "b-" + b.id;
+      el.setAttribute("aria-label", `${b.name}. Activate to simulate its failure.`);
+      el.innerHTML = `
+        <span class="b-icon"><svg class="icon"><use href="#${b.icon}"/></svg></span>
+        <span class="b-name">${b.name}${b.sub ? `<span class="b-sub">${b.sub}</span>` : ""}</span>
+        <span class="st-tag tag-dead" aria-hidden="true"><svg class="icon"><use href="#i-x"/></svg></span>
+        <span class="st-tag tag-deg" aria-hidden="true"><svg class="icon"><use href="#i-alert"/></svg></span>
+        <span class="st-tag tag-net" aria-hidden="true"><svg class="icon"><use href="#i-shield"/></svg></span>`;
+      row.appendChild(el);
+      blockEls[b.id] = el;
+    }
+    stage.appendChild(band);
+  }
+
+  // ---------- state ----------
+  let mode = "a";                 // "a" = after the change, "b" = before
+  let failedId = null;            // currently simulated root failure
+  let cur = {};                   // current status per block id
+  let corrupt = false;            // a wrong-money rule fired
+  let caught = false;             // the net caught something
+  const timers = [];
+  const wireState = new Map();    // wireIdx -> "dead" | "deg" | "catch"
+  const activeCatches = new Set();// wireIdx with a net badge
+
+  const clearTimers = () => { while (timers.length) clearTimeout(timers.pop()); };
+  const later = (fn, ms) => timers.push(setTimeout(fn, ms));
+
+  // ---------- wires ----------
+  const svg = document.getElementById("wires");
+  const NS = "http://www.w3.org/2000/svg";
+  let wireEls = {};   // wireIdx -> { g, mid }
+
+  function drawWires() {
+    svg.innerHTML = "";
+    document.querySelectorAll(".net-badge").forEach((n) => n.remove());
+    svg.setAttribute("viewBox", `0 0 ${stage.offsetWidth} ${stage.offsetHeight}`);
+    wireEls = {};
+    const s = stage.getBoundingClientRect();
+    const rect = (el) => { const r = el.getBoundingClientRect(); return { left: r.left - s.left, top: r.top - s.top, w: r.width, h: r.height }; };
+
+    const active = WIRES.map((w, i) => ({ w, i })).filter(({ w }) => !w.mode || w.mode === mode);
+
+    // Spread multiple wires along each block edge instead of stacking them at the center.
+    const slots = {};
+    const plan = active.map(({ w, i }) => {
+      const ra = rect(blockEls[w.from]), rb = rect(blockEls[w.to]);
+      const sameRow = ra.top < rb.top + rb.h && rb.top < ra.top + ra.h;
+      const down = rb.top > ra.top;
+      const aEdge = sameRow ? "bottom" : down ? "bottom" : "top";
+      const bEdge = sameRow ? "bottom" : down ? "top" : "bottom";
+      (slots[w.from + ":" + aEdge] ??= []).push({ i, end: "a", otherX: rb.left + rb.w / 2 });
+      (slots[w.to + ":" + bEdge] ??= []).push({ i, end: "b", otherX: ra.left + ra.w / 2 });
+      return { w, i, ra, rb, aEdge, bEdge, sameRow };
+    });
+    const anchor = {};
+    for (const [key, list] of Object.entries(slots)) {
+      list.sort((p, q) => p.otherX - q.otherX);
+      const r = rect(blockEls[key.split(":")[0]]);
+      list.forEach((p, k) => {
+        (anchor[p.i] ??= {})[p.end] = r.left + (r.w * (k + 1)) / (list.length + 1);
+      });
+    }
+
+    const bez = (p0, p1, p2, p3, t) =>
+      (1 - t) ** 3 * p0 + 3 * t * (1 - t) ** 2 * p1 + 3 * (1 - t) * t * t * p2 + t ** 3 * p3;
+
+    for (const { w, i, ra, rb, aEdge, bEdge, sameRow } of plan) {
+      const ax = anchor[i].a, ay = aEdge === "bottom" ? ra.top + ra.h : ra.top;
+      const bx = anchor[i].b, by = bEdge === "top" ? rb.top : rb.top + rb.h;
+      let d, mid, labelX, labelY;
+      if (sameRow) {
+        // route below the row so the wire never crosses through sibling blocks
+        const dip = Math.max(ay, by) + 30 + (i % 4) * 12;
+        d = `M ${ax} ${ay} C ${ax} ${dip}, ${bx} ${dip}, ${bx} ${by}`;
+        mid = { x: (ax + bx) / 2, y: (ay + by + 6 * dip) / 8 + 10 };
+        // label hangs off the source anchor, staggered per wire so rows of
+        // same-row labels never collide with each other or the curves
+        labelX = ax + 10;
+        labelY = ay + 20 + (i % 4) * 11;
+      } else {
+        const midY = (ay + by) / 2;
+        d = `M ${ax} ${ay} C ${ax} ${midY}, ${bx} ${midY}, ${bx} ${by}`;
+        mid = { x: (ax + bx) / 2, y: midY };
+        // label sits ~30% along the curve, in the gap under the source band,
+        // so long wires don't hide it behind intermediate blocks
+        labelX = bez(ax, ax, bx, bx, .3) + 6;
+        labelY = bez(ay, midY, midY, by, .3) - 4;
+      }
+      const g = document.createElementNS(NS, "g");
+      g.setAttribute("class", "wgroup");
+      const path = document.createElementNS(NS, "path");
+      path.setAttribute("d", d); path.setAttribute("class", "wire");
+      const flow = document.createElementNS(NS, "path");
+      flow.setAttribute("d", d); flow.setAttribute("class", "wire-flow");
+      const dot = document.createElementNS(NS, "circle");
+      dot.setAttribute("cx", ax); dot.setAttribute("cy", ay); dot.setAttribute("r", 2.5);
+      dot.setAttribute("class", "wire-dot");
+      const dir = bEdge === "top" ? -1 : 1;
+      const arrow = document.createElementNS(NS, "path");
+      arrow.setAttribute("d", `M ${bx - 4} ${by + 6 * dir} L ${bx} ${by} L ${bx + 4} ${by + 6 * dir}`);
+      arrow.setAttribute("class", "wire-arrow");
+      const label = document.createElementNS(NS, "text");
+      label.setAttribute("x", labelX);
+      label.setAttribute("y", labelY);
+      label.setAttribute("class", "wire-label");
+      label.textContent = w.label;
+      for (const part of [path, flow, dot, arrow, label]) g.appendChild(part);
+      svg.appendChild(g);
+      wireEls[i] = { g, mid };
+    }
+    // re-apply any active simulation state after a redraw (resize / fullscreen / mode flip)
+    for (const [i, cls] of wireState) markWire(i, cls);
+    for (const i of activeCatches) placeNetBadge(i);
+  }
+
+  function markWire(i, cls) {
+    wireState.set(i, cls);
+    const w = wireEls[i];
+    if (w) w.g.setAttribute("class", `wgroup g-on g-${cls}`);
+  }
+
+  function placeNetBadge(i) {
+    activeCatches.add(i);
+    const w = wireEls[i];
+    if (!w) return;
+    const lbl = w.g.querySelector(".wire-label");
+    if (lbl) lbl.style.display = "none"; // the badge takes the label's spot
+    const badge = document.createElement("div");
+    badge.className = "net-badge";
+    badge.innerHTML = `<svg class="icon"><use href="#i-shield"/></svg> caught`;
+    badge.style.left = w.mid.x + "px";
+    badge.style.top = w.mid.y + "px";
+    stage.appendChild(badge);
+  }
+
+  // ---------- tooltip ----------
+  const tip = document.getElementById("tip");
+  const STATUS_WORD = { fine: "working normally", degraded: "struggling", dead: "down" };
+  function showTip(b, el) {
+    tip.querySelector(".t-name").textContent = b.name + " — ";
+    tip.querySelector(".t-job").textContent = b.job;
+    const st = tip.querySelector(".t-state");
+    const ghost = mode === "b" && b.id === "lease";
+    const status = cur[b.id] || "fine";
+    st.textContent = ghost ? "Doesn't exist yet in the before world."
+      : `Right now: ${STATUS_WORD[status]}. ${failedId ? "" : "Click to simulate its failure."}`;
+    st.className = "t-state " + (ghost ? "" : status);
+    const s = stage.getBoundingClientRect(), r = el.getBoundingClientRect();
+    tip.style.left = Math.max(0, Math.min(r.left - s.left, stage.offsetWidth - 310)) + "px";
+    tip.style.top = r.bottom - s.top + 8 + "px";
+    tip.classList.add("show");
+  }
+  const hideTip = () => tip.classList.remove("show");
+
+  // ---------- narration ----------
+  const nlog = document.getElementById("nlog");
+  const N_ICON = { dead: "i-x", deg: "i-alert", catch: "i-shield", hint: "i-note", root: "i-bolt" };
+  function addN(kind, html) {
+    const item = document.createElement("div");
+    item.className = "n-item n-" + (kind === "root" ? "dead" : kind);
+    item.innerHTML = `<svg class="icon"><use href="#${N_ICON[kind]}"/></svg><p>${html}</p>`;
+    nlog.appendChild(item);
+    nlog.scrollTop = nlog.scrollHeight;
+  }
+  function introN() {
+    nlog.innerHTML = "";
+    addN("hint", "Click any block to kill it — or fire a preset scenario above. The log narrates each hop of the blast.");
+  }
+
+  // ---------- journeys ----------
+  const JOURNEYS = [
+    { id: "join", icon: "i-video", name: "Join a call" },
+    { id: "bill", icon: "i-card",  name: "Get billed correctly" },
+    { id: "rec",  icon: "i-rec",   name: "Record a call" },
+  ];
+  const jbox = document.getElementById("journeys");
+  jbox.innerHTML = JOURNEYS.map((j) => `
+    <div class="chip" id="j-${j.id}">
+      <div class="c-head"><svg class="icon"><use href="#${j.icon}"/></svg>${j.name}<span class="c-word"></span></div>
+      <p></p>
+    </div>`).join("");
+
+  function journeyStates() {
+    const s = (id) => cur[id] || "fine";
+    const out = {};
+    // Join a call
+    if (s("engine") === "dead") out.join = ["broken", "No calls can run — the Call engine is out."];
+    else if (s("engine") === "degraded" && (failedId === "cloud" || failedId === "lease"))
+      out.join = ["deg", mode === "a"
+        ? "New calls can't start; running calls wind down gracefully as their permits expire."
+        : "New calls can't start until machines come back."];
+    else if (s("web") === "dead" && s("mobile") === "dead") out.join = ["broken", "Both doors are closed — no way into a call."];
+    else if (s("web") === "dead") out.join = ["deg", "Browser users are locked out; the phone app still works."];
+    else if (s("mobile") === "dead") out.join = ["deg", "Phone users are locked out; the browser still works."];
+    else out.join = ["fine", "Click join, get a call."];
+    // Get billed correctly
+    if (corrupt) out.bill = ["broken", "Customers are being charged for machines that are gone — the worst kind of billing bug."];
+    else if (s("billing") === "dead") out.bill = ["broken", "No charges go out until Billing is back."];
+    else if (s("billing") === "degraded") out.bill = ["deg", "Charges queue and retry — late, but correct."];
+    else if (caught) out.bill = ["fine", "Protected — Billing charges only live permits, so dead machines stopped billing at expiry."];
+    else out.bill = ["fine", mode === "a" ? "Every charge traces to a live, time-boxed permit." : "Charges follow the machine-hour meter."];
+    // Record a call
+    if (s("rec") === "dead") out.rec = ["broken", "Recordings are being dropped."];
+    else if (s("rec") === "degraded") out.rec = ["deg", "Only the calls still running can be recorded."];
+    else out.rec = ["fine", "Recorded calls save and attach to their session."];
+    return out;
+  }
+
+  const J_WORD = { fine: "fine", deg: "degraded", broken: "broken" };
+  function renderJourneys() {
+    const st = journeyStates();
+    for (const j of JOURNEYS) {
+      const [level, text] = st[j.id];
+      const el = document.getElementById("j-" + j.id);
+      el.className = "chip c-" + level;
+      el.querySelector(".c-word").textContent = J_WORD[level];
+      el.querySelector("p").textContent = text;
+    }
+  }
+
+  // ---------- propagation ----------
+  function propagate(root) {
+    const st = {};
+    BLOCKS.forEach((b) => (st[b.id] = "fine"));
+    st[root] = "dead";
+    const stages = [];
+    const done = new Set();
+    let frontier = [root];
+    while (frontier.length) {
+      const ev = [];
+      const next = [];
+      for (const r of RULES) {
+        if (r.mode && r.mode !== mode) continue;
+        if (r.origin && !r.origin.includes(root)) continue;
+        if (!frontier.includes(r.src)) continue;
+        if (RANK[st[r.src]] < RANK[r.when]) continue;
+        const key = r.w + "|" + r.dst;
+        if (done.has(key)) continue;
+        done.add(key);
+        if (r.catch) { ev.push({ r, type: "catch" }); continue; }
+        if (RANK[r.then] > RANK[st[r.dst]]) {
+          st[r.dst] = r.then;
+          ev.push({ r, type: "hit" });
+          next.push(r.dst);
+        }
+      }
+      if (ev.length) stages.push(ev);
+      frontier = next;
+    }
+    return stages;
+  }
+
+  // ---------- visuals ----------
+  function clearSim() {
+    clearTimers();
+    stage.classList.remove("sim-on");
+    wireState.clear();
+    activeCatches.clear();
+    document.querySelectorAll(".net-badge").forEach((n) => n.remove());
+    for (const el of Object.values(blockEls)) el.classList.remove("st-dead", "st-degraded", "st-root", "catching");
+    for (const w of Object.values(wireEls)) {
+      w.g.setAttribute("class", "wgroup");
+      const lbl = w.g.querySelector(".wire-label");
+      if (lbl) lbl.style.display = "";
+    }
+    cur = {};
+    BLOCKS.forEach((b) => (cur[b.id] = "fine"));
+    corrupt = false;
+    caught = false;
+  }
+
+  function applyStatus(id, status) {
+    cur[id] = status;
+    const el = blockEls[id];
+    el.classList.toggle("st-dead", status === "dead");
+    el.classList.toggle("st-degraded", status === "degraded");
+  }
+
+  function fail(rootId) {
+    if (mode === "b" && rootId === "lease") return; // doesn't exist yet
+    clearSim();
+    failedId = rootId;
+    const b = BLOCKS.find((x) => x.id === rootId);
+    stage.classList.add("sim-on");
+    nlog.innerHTML = "";
+    addN("root", `<b>Boom.</b> ${b.dead}`);
+    applyStatus(rootId, "dead");
+    blockEls[rootId].classList.add("st-root");
+    renderJourneys();
+
+    const stages = propagate(rootId);
+    stages.forEach((ev, si) => {
+      later(() => {
+        for (const { r, type } of ev) {
+          if (type === "catch") {
+            caught = true;
+            markWire(r.w, "catch");
+            placeNetBadge(r.w);
+            blockEls.lease.classList.add("catching");
+            addN("catch", r.narr);
+          } else {
+            applyStatus(r.dst, r.then);
+            markWire(r.w, r.then === "dead" ? "dead" : "deg");
+            if (r.corrupt) corrupt = true;
+            addN(r.then === "dead" ? "dead" : "deg", r.narr);
+          }
+        }
+        renderJourneys();
+      }, (si + 1) * STAGE_MS);
+    });
+
+    later(() => {
+      if (!stages.length) addN("hint", "The blast stops here — nothing else depends on this part.");
+      if (rootId === "lease") addN("hint", "The Lease keeper doesn't exist in the before world — this failure simply can't happen there.");
+      else addN("hint", mode === "a"
+        ? "Flip to <b>Before the change</b> to replay this exact failure without the safety net."
+        : "Flip to <b>After · with the net</b> to watch the Lease keeper catch this.");
+    }, (stages.length + 1) * STAGE_MS);
+  }
+
+  function reset() {
+    clearSim();
+    failedId = null;
+    renderJourneys();
+    introN();
+  }
+
+  // ---------- mode ----------
+  const modeBadge = document.getElementById("mode-badge");
+  function setMode(m) {
+    if (m === mode) return;
+    mode = m;
+    document.getElementById("mode-after").setAttribute("aria-pressed", String(m === "a"));
+    document.getElementById("mode-before").setAttribute("aria-pressed", String(m === "b"));
+    modeBadge.textContent = m === "a" ? "after the change" : "before the change";
+    const lease = blockEls.lease;
+    lease.classList.toggle("ghost", m === "b");
+    lease.setAttribute("aria-disabled", String(m === "b"));
+    lease.querySelector(".b-sub").textContent = m === "b" ? "not built yet" : "the safety net";
+    const replay = failedId && !(m === "b" && failedId === "lease");
+    const keep = failedId;
+    clearSim();
+    drawWires();
+    if (replay) fail(keep);
+    else { failedId = null; renderJourneys(); introN(); }
+  }
+
+  // ---------- events ----------
+  for (const b of BLOCKS) {
+    const el = blockEls[b.id];
+    el.addEventListener("mouseenter", () => showTip(b, el));
+    el.addEventListener("mouseleave", hideTip);
+    el.addEventListener("focus", () => showTip(b, el));
+    el.addEventListener("blur", hideTip);
+    el.addEventListener("click", () => { hideTip(); fail(b.id); });
+  }
+  document.querySelectorAll(".preset").forEach((btn) =>
+    btn.addEventListener("click", () => fail(btn.dataset.fail)));
+  document.getElementById("reset").addEventListener("click", reset);
+  document.getElementById("mode-after").addEventListener("click", () => setMode("a"));
+  document.getElementById("mode-before").addEventListener("click", () => setMode("b"));
+
+  document.querySelectorAll("[data-fullscreen]").forEach((b) =>
+    b.addEventListener("click", () =>
+      document.fullscreenElement
+        ? document.exitFullscreen()
+        : document.querySelector(b.dataset.fullscreen).requestFullscreen()));
+  addEventListener("fullscreenchange", drawWires);
+  addEventListener("resize", drawWires);
+
+  // ---------- init ----------
+  BLOCKS.forEach((b) => (cur[b.id] = "fine"));
+  drawWires();
+  renderJourneys();
+  introN();
+})();
+</script>
+</body>
+</html>

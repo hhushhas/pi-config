@@ -1,0 +1,1 @@
+const READING_ROOM = [];

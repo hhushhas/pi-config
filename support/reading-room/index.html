@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="the user's private queue for reviewing specs and debriefs.">
+<meta name="application-name" content="Reading Room">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#191919" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Reading Room">
+<meta property="og:description" content="A private queue for reviewing specs and debriefs.">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Reading Room">
+<meta name="twitter:description" content="A private queue for reviewing specs and debriefs.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<title>Reading Room</title>
+<style>
+  :root {
+    --bg: #faf9f7; --fg: #37352f; --muted: #787774; --faint: #9b9a97;
+    --line: #e8e6e1; --line-strong: #d3d1cb; --card: #f5f4f1;
+    --accent: #2383e2; --accent-soft: #e8f3fc; --amber: #d9730d;
+    --green: #448361; --red: #d44c47;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #191919; --fg: #e3e2e0; --muted: #a3a3a3; --faint: #787878;
+      --line: #2f2f2f; --line-strong: #444; --card: #232323;
+      --accent: #529cca; --accent-soft: #24333d; --amber: #cb7b37;
+      --green: #4f9768; --red: #de5550;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased;
+    font: 16px/1.6 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  main { width: min(900px, calc(100% - 3rem)); margin: 0 auto; padding: 3.5rem 0 5rem; }
+  .icon { width: 1.1em; height: 1.1em; vertical-align: -.18em; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  h1 { margin: 0; font-size: 1.8rem; font-weight: 650; line-height: 1.25; letter-spacing: -.02em; }
+  h2 { margin: 0; font-size: .78rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; text-underline-offset: 2px; }
+  button, input, select, textarea { font: inherit; }
+  button { color: var(--fg); cursor: pointer; }
+  button:disabled { cursor: default; opacity: .45; }
+  input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--line); }
+  .today { margin: .15rem 0 0; color: var(--faint); font-size: .83rem; }
+  .top-right { text-align: right; }
+  .tally { margin: 0 0 .4rem; font-size: .88rem; }
+  .tally strong { font-weight: 600; }
+  .tally .sep { margin: 0 .35rem; color: var(--faint); }
+  .mark-all { padding: .25rem .65rem; border: 1px solid var(--line); border-radius: 5px; background: transparent; color: var(--muted); font-size: .76rem; }
+  .mark-all:hover:not(:disabled) { border-color: var(--line-strong); background: var(--card); color: var(--fg); }
+
+  .controls { display: grid; grid-template-columns: minmax(0, 1fr) 170px; gap: .65rem; margin: 1.5rem 0 .8rem; }
+  input, textarea, select { color: var(--fg); border: 1px solid var(--line); background: var(--bg); }
+  input[type="search"] { width: 100%; height: 42px; padding: 0 .8rem; border-radius: 6px; }
+  input::placeholder, textarea::placeholder { color: var(--faint); }
+  select { height: 42px; padding: 0 .65rem; border-radius: 6px; background: var(--card); font-size: .84rem; }
+  .chiprow { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: .4rem 0; }
+  .chiprow .label { min-width: 4rem; color: var(--faint); font-size: .7rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+  .chip { padding: .15rem .7rem; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); font-size: .78rem; }
+  .chip:hover { border-color: var(--line-strong); color: var(--fg); }
+  .chip[aria-pressed="true"] { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); background: var(--accent-soft); color: var(--accent); }
+
+  .queue-heading { display: flex; align-items: baseline; justify-content: space-between; margin: 2rem 0 .7rem; color: var(--muted); }
+  .result-count { font-size: .78rem; }
+  .queue { display: flex; flex-direction: column; gap: .75rem; margin: 0; padding: 0; list-style: none; }
+  .entry { padding: 1.05rem 1.2rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+  .entry:hover { border-color: var(--line-strong); }
+  .entry.read { background: transparent; opacity: .58; }
+  .entry.read:hover, .entry.read:focus-within { opacity: 1; }
+  .row1 { display: flex; flex-wrap: wrap; align-items: baseline; gap: .55rem; }
+  .title { font-size: 1.08rem; font-weight: 650; letter-spacing: -.01em; }
+  .spacer { flex: 1; }
+  .meta { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .7rem; margin-top: .38rem; color: var(--faint); font-size: .78rem; }
+  .meta span { display: inline-flex; align-items: center; gap: .25rem; }
+  .summary { margin: .62rem 0 0; font-size: .92rem; line-height: 1.65; }
+  .badge { display: inline-block; padding: .06rem .5rem; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .7rem; white-space: nowrap; }
+  .badge.accent { color: var(--accent); border-color: var(--accent); }
+  .badge.green { color: var(--green); border-color: var(--green); }
+  .badge.amber { color: var(--amber); border-color: var(--amber); }
+  .badge.red { color: var(--red); border-color: var(--red); }
+  .badge.loud { color: #fff; border-color: var(--red); background: var(--red); font-weight: 600; }
+  .badge.type { font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+  .badge.type.spec { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .badge.type.debrief { color: var(--fg); border-color: var(--line-strong); }
+  .actions { display: flex; align-items: center; gap: .75rem; margin-top: .75rem; }
+  .readtoggle { padding: .22rem .65rem; border: 1px solid var(--line); border-radius: 5px; background: transparent; color: var(--muted); font-size: .78rem; }
+  .readtoggle:hover { border-color: var(--line-strong); color: var(--fg); }
+  .readtoggle[aria-pressed="true"] { color: var(--green); }
+  .notes { flex: 1; margin: 0; }
+  .notes summary { display: inline-flex; align-items: center; gap: .3rem; color: var(--muted); cursor: pointer; font-size: .78rem; list-style: none; }
+  .notes summary::-webkit-details-marker { display: none; }
+  .notes summary:hover { color: var(--fg); }
+  .notes .dot { display: none; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
+  .notes.has-notes .dot { display: inline-block; }
+  .notes textarea { display: block; width: 100%; min-height: 3.5rem; margin-top: .55rem; padding: .55rem .65rem; border-radius: 6px; resize: vertical; font-size: .84rem; }
+  .empty { margin-top: .75rem; padding: 3rem 1rem; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); text-align: center; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--faint); font-size: .78rem; }
+  footer code { padding: .1rem .35rem; border-radius: 4px; background: var(--card); font: .74rem/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+  @media (prefers-reduced-motion: no-preference) { .entry { transition: opacity .15s ease, border-color .15s ease; } }
+  @media (max-width: 640px) {
+    main { width: min(100% - 2rem, 900px); padding-top: 2rem; }
+    .top { align-items: flex-start; }
+    .top-right { text-align: left; }
+    .tally .total { display: none; }
+    .controls { grid-template-columns: 1fr; }
+    .chiprow .label { flex-basis: 100%; }
+    .row1 .spacer { display: none; }
+    .row1 .title { flex-basis: calc(100% - 5rem); }
+  }
+</style>
+</head>
+<body>
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5v13zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-2.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+</svg>
+<main>
+  <header class="top">
+    <div>
+      <h1><svg class="icon"><use href="#i-book"/></svg> Reading Room</h1>
+      <p class="today" id="today"></p>
+    </div>
+    <div class="top-right">
+      <p class="tally" id="tally"></p>
+      <button class="mark-all" id="mark-all" type="button">Mark all read</button>
+    </div>
+  </header>
+
+  <div class="controls">
+    <input type="search" id="search" placeholder="Search title, summary, or project…" aria-label="Search reading room">
+    <select id="sort" aria-label="Sort queue">
+      <option value="date">Newest first</option>
+      <option value="risk">Highest risk first</option>
+      <option value="minutes">Shortest read first</option>
+    </select>
+  </div>
+  <div class="chiprow" id="type-chips" role="group" aria-label="Filter by type">
+    <span class="label">Type</span>
+    <button class="chip" type="button" data-type="spec" aria-pressed="false">Specs</button>
+    <button class="chip" type="button" data-type="debrief" aria-pressed="false">Debriefs</button>
+    <button class="chip" type="button" id="unread-only" aria-pressed="false">Unread only</button>
+  </div>
+  <div class="chiprow" id="project-chips" role="group" aria-label="Filter by project">
+    <span class="label">Project</span>
+  </div>
+
+  <div class="queue-heading">
+    <h2>Reading queue</h2>
+    <span class="result-count" id="result-count"></span>
+  </div>
+  <ol class="queue" id="queue"></ol>
+  <div class="empty" id="empty" hidden>Nothing matches these filters. Clear a chip or the search box to see the queue.</div>
+
+  <footer>Agents: append one <code>READING_ROOM.push({...})</code> line to <code>registry.js</code> — see README.</footer>
+</main>
+<script src="registry.js"></script>
+<script>
+(() => {
+  "use strict";
+  const entries = Array.isArray(window.READING_ROOM) ? window.READING_ROOM : [];
+  const READ_KEY = "reading-room:read";
+  const NOTES_KEY = "reading-room:notes";
+  const loadMap = (key) => {
+    try { return JSON.parse(localStorage.getItem(key)) || {}; } catch { return {}; }
+  };
+  const saveMap = (key, map) => localStorage.setItem(key, JSON.stringify(map));
+  let readMap = loadMap(READ_KEY);
+  const notesMap = loadMap(NOTES_KEY);
+  const state = { types: new Set(), project: null, unreadOnly: false, query: "", sort: "date" };
+  const RISK_ORDER = { blocker: 0, major: 1, minor: 2, none: 3 };
+  const VERDICT_CLASS = {
+    solid: "green", done: "green", "needs-attention": "amber", "in-progress": "amber",
+    concerning: "red", ready: "accent", draft: "",
+  };
+  const $ = (selector) => document.querySelector(selector);
+  const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+
+  $("#today").textContent = new Date().toLocaleDateString("en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+
+  function renderTally() {
+    const unread = entries.filter((entry) => !readMap[entry.id]);
+    const minutes = unread.reduce((sum, entry) => sum + (entry.minutes || 0), 0);
+    $("#tally").innerHTML = `<strong>${unread.length} unread</strong><span class="total"><span class="sep">·</span>${entries.length} total</span><span class="sep">·</span>~${minutes} min`;
+    $("#mark-all").disabled = unread.length === 0;
+    document.title = unread.length ? `(${unread.length}) Reading Room` : "Reading Room · Caught up";
+  }
+
+  function renderProjectChips() {
+    const projects = [...new Set(entries.map((entry) => entry.project))].sort();
+    const row = $("#project-chips");
+    for (const project of projects) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "chip";
+      button.dataset.project = project;
+      button.setAttribute("aria-pressed", "false");
+      button.textContent = project;
+      button.addEventListener("click", () => {
+        state.project = state.project === project ? null : project;
+        row.querySelectorAll(".chip").forEach((chip) =>
+          chip.setAttribute("aria-pressed", String(chip.dataset.project === state.project)));
+        renderQueue();
+      });
+      row.appendChild(button);
+    }
+  }
+
+  function riskBadge(risk) {
+    if (risk === "blocker") return '<span class="badge loud">blocker</span>';
+    if (risk === "major") return '<span class="badge red">major risk</span>';
+    if (risk === "minor") return '<span class="badge amber">minor risk</span>';
+    return '<span class="badge">no risk</span>';
+  }
+
+  function filteredEntries() {
+    const query = state.query.trim().toLowerCase();
+    const list = entries.filter((entry) => {
+      if (state.types.size && !state.types.has(entry.type)) return false;
+      if (state.project && entry.project !== state.project) return false;
+      if (state.unreadOnly && readMap[entry.id]) return false;
+      const searchText = `${entry.title} ${entry.summary} ${entry.project}`.toLowerCase();
+      return !query || searchText.includes(query);
+    });
+    const compare = {
+      date: (a, b) => b.date.localeCompare(a.date),
+      risk: (a, b) => (RISK_ORDER[a.risk] ?? 9) - (RISK_ORDER[b.risk] ?? 9) || b.date.localeCompare(a.date),
+      minutes: (a, b) => a.minutes - b.minutes || b.date.localeCompare(a.date),
+    }[state.sort];
+    list.sort(compare);
+    return [...list.filter((entry) => !readMap[entry.id]), ...list.filter((entry) => readMap[entry.id])];
+  }
+
+  function entryCard(entry) {
+    const item = document.createElement("li");
+    const isRead = Boolean(readMap[entry.id]);
+    const note = notesMap[entry.id] || "";
+    const verdictClass = VERDICT_CLASS[entry.verdict] ?? "";
+    item.className = `entry${isRead ? " read" : ""}`;
+    item.dataset.id = entry.id;
+    item.innerHTML = `
+      <div class="row1">
+        <span class="badge type ${escapeHtml(entry.type)}">${escapeHtml(entry.type)}</span>
+        <a class="title" href="file://${escapeHtml(entry.path)}">${escapeHtml(entry.title)}</a>
+        <span class="spacer"></span>
+        <span class="badge ${verdictClass}">${escapeHtml(entry.verdict)}</span>
+        ${riskBadge(entry.risk)}
+      </div>
+      <div class="meta">
+        <span class="badge">${escapeHtml(entry.project)}</span>
+        <span>${escapeHtml(entry.format)}</span>
+        <span>${escapeHtml(entry.date)}</span>
+        <span><svg class="icon"><use href="#i-clock"/></svg>~${entry.minutes} min</span>
+      </div>
+      <p class="summary">${escapeHtml(entry.summary)}</p>
+      <div class="actions">
+        <button type="button" class="readtoggle" aria-pressed="${isRead}">
+          <svg class="icon"><use href="#i-check"/></svg>${isRead ? "Mark unread" : "Mark read"}
+        </button>
+        <details class="notes${note ? " has-notes" : ""}">
+          <summary><svg class="icon"><use href="#i-pen"/></svg>Notes <span class="dot" aria-label="Has notes"></span></summary>
+          <textarea aria-label="Notes for ${escapeHtml(entry.title)}" placeholder="Margin notes…">${escapeHtml(note)}</textarea>
+        </details>
+      </div>`;
+    item.querySelector(".readtoggle").addEventListener("click", () => {
+      if (readMap[entry.id]) delete readMap[entry.id]; else readMap[entry.id] = true;
+      saveMap(READ_KEY, readMap);
+      renderTally();
+      renderQueue();
+    });
+    const notes = item.querySelector(".notes");
+    item.querySelector("textarea").addEventListener("input", (event) => {
+      const text = event.target.value;
+      if (text.trim()) notesMap[entry.id] = text; else delete notesMap[entry.id];
+      saveMap(NOTES_KEY, notesMap);
+      notes.classList.toggle("has-notes", Boolean(text.trim()));
+    });
+    return item;
+  }
+
+  function renderQueue() {
+    const queue = $("#queue");
+    const openNotes = new Set([...queue.querySelectorAll(".entry")]
+      .filter((item) => item.querySelector("details[open]"))
+      .map((item) => item.dataset.id));
+    const list = filteredEntries();
+    queue.replaceChildren();
+    $("#empty").hidden = list.length > 0;
+    $("#result-count").textContent = `${list.length} ${list.length === 1 ? "item" : "items"}`;
+    for (const entry of list) {
+      const card = entryCard(entry);
+      if (openNotes.has(entry.id)) card.querySelector("details").open = true;
+      queue.appendChild(card);
+    }
+  }
+
+  document.querySelectorAll("#type-chips [data-type]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const type = chip.dataset.type;
+      if (state.types.has(type)) state.types.delete(type); else state.types.add(type);
+      chip.setAttribute("aria-pressed", String(state.types.has(type)));
+      renderQueue();
+    });
+  });
+  $("#unread-only").addEventListener("click", () => {
+    state.unreadOnly = !state.unreadOnly;
+    $("#unread-only").setAttribute("aria-pressed", String(state.unreadOnly));
+    renderQueue();
+  });
+  $("#search").addEventListener("input", (event) => { state.query = event.target.value; renderQueue(); });
+  $("#sort").addEventListener("change", (event) => { state.sort = event.target.value; renderQueue(); });
+  $("#mark-all").addEventListener("click", () => {
+    for (const entry of entries) readMap[entry.id] = true;
+    saveMap(READ_KEY, readMap);
+    renderTally();
+    renderQueue();
+  });
+
+  renderProjectChips();
+  renderTally();
+  renderQueue();
+})();
+</script>
+</body>
+</html>

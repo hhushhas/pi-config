@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chalk — the metro map</title>
+<style>
+  :root {
+    --bg: #faf9f7; --fg: #37352f; --muted: #9b9a97; --line: #e8e6e1;
+    --card: #f3f1ec; --accent: #2383e2; --amber: #d9730d; --green: #448361; --red: #d44c47;
+    --glow: color-mix(in srgb, var(--accent) 30%, transparent);
+    --station: #faf9f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #191919; --fg: #e3e2e0; --muted: #9b9b9b; --line: #2f2f2f;
+      --card: #232323; --accent: #529cca; --amber: #cb7b37; --green: #4f9768; --red: #de5550;
+      --station: #191919;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg); margin: 0; -webkit-font-smoothing: antialiased;
+    font: 16px/1.65 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  main { display: grid; grid-template-columns: 1fr min(720px, calc(100% - 3rem)) 1fr; padding: 3rem 0 6rem; }
+  main > * { grid-column: 2; min-width: 0; }
+  h1 { font-size: 1.75rem; font-weight: 600; line-height: 1.3; margin: 0 0 .5rem; }
+  .kicker { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 .25rem; }
+  .caption { color: var(--muted); font-size: .85rem; }
+  .badge { display: inline-block; padding: .1rem .6rem; border-radius: 999px; font-size: .75rem; border: 1px solid var(--line); color: var(--muted); vertical-align: middle; }
+  .badge.accent { color: var(--accent); border-color: var(--accent); }
+  button { font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: .35rem .9rem; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  .icon { width: 1.1em; height: 1.1em; vertical-align: -.18em; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .term { position: relative; border-bottom: 1px dotted var(--muted); cursor: help; }
+  .term:hover::after, .term:focus::after {
+    content: attr(data-def); position: absolute; left: 0; top: calc(100% + 4px); z-index: 30;
+    width: max-content; max-width: 320px; padding: .5rem .75rem; font-size: .85rem; line-height: 1.4;
+    background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.15);
+  }
+
+  /* ---------- metro stage ---------- */
+  .fullbleed {
+    grid-column: 1 / -1; width: 100%; padding: 2.5rem clamp(1rem, 3vw, 3rem) 3rem;
+    background: var(--card);
+    background-image: radial-gradient(color-mix(in srgb, var(--muted) 20%, transparent) 1px, transparent 1px);
+    background-size: 24px 24px;
+    border-block: 1px solid var(--line);
+  }
+  :fullscreen { background: var(--bg); overflow-y: auto; }
+  .metro-head { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; max-width: 1240px; margin: 0 auto 1rem; }
+  .metro-head .spacer { flex: 1; }
+  .linechip { display: inline-flex; align-items: center; gap: .45rem; padding: .3rem .8rem; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); font-size: .82rem; cursor: pointer; }
+  .linechip i { width: 1.15rem; height: .3rem; border-radius: 2px; display: inline-block; }
+  .linechip[aria-pressed="true"] { border-color: currentColor; }
+  .stagewrap { position: relative; max-width: 1240px; margin: 0 auto; }
+  svg#map { display: block; width: 100%; height: auto; }
+
+  .rail { fill: none; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; opacity: .9; transition: opacity .3s; }
+  .rail.ghost { opacity: 0; }
+  #map.focused .rail { opacity: .13; }
+  #map.focused .rail.focus { opacity: 1; }
+  .rail-old { fill: none; stroke-width: 6; stroke-linecap: round; stroke-dasharray: 2 10; opacity: 0; transition: opacity .3s; }
+  .before .rail-old { opacity: .55; }
+  .before .rail.reroutes { opacity: 0; }
+
+  .station circle { fill: var(--station); stroke: var(--fg); stroke-width: 2.5; transition: opacity .3s; }
+  .station.minor circle { stroke-width: 2; }
+  .station text { fill: var(--fg); font-size: 13px; font-weight: 550; }
+  .station .sub { fill: var(--muted); font-size: 10.5px; font-weight: 400; }
+  .station { cursor: default; }
+  .station:focus { outline: none; }
+  .station:hover circle, .station:focus circle { stroke-width: 4; }
+  #map.focused .station:not(.on-focus) { opacity: .25; }
+  .station.is-new circle { stroke: var(--accent); filter: drop-shadow(0 0 5px var(--glow)); }
+  .station.is-new text.name { fill: var(--accent); }
+  .before .station.is-new, .before .newtag { opacity: 0; pointer-events: none; }
+  .newtag { transition: opacity .3s; }
+  .gaptag { opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .before .gaptag { opacity: 1; }
+
+  /* journey strip */
+  #journey { max-width: 1240px; margin: 1.25rem auto 0; min-height: 3.4rem; }
+  #journey .strip { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; font-size: .88rem; }
+  #journey .stop { background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: .2rem .7rem; }
+  #journey .stop.new { border-color: var(--accent); color: var(--accent); }
+  #journey .sep { color: var(--muted); }
+  #journey .caption { margin-top: .35rem; }
+
+  /* tooltip */
+  #tip {
+    position: absolute; z-index: 40; max-width: 300px; padding: .55rem .8rem; border-radius: 8px;
+    background: var(--bg); border: 1px solid var(--line); box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    font-size: .83rem; line-height: 1.45; pointer-events: none; opacity: 0; transition: opacity .15s;
+  }
+  #tip.show { opacity: 1; }
+  #tip .t-name { font-weight: 600; }
+  #tip .t-state { display: block; margin-top: .25rem; font-size: .74rem; color: var(--muted); }
+  #tip .t-state.new { color: var(--accent); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 3H3v6M15 3h6v6M9 21H3v-6M15 21h6v-6"/></symbol>
+  <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M10 3h4v3.2a1.8 1.8 0 1 0 3.6 0H21v4h-3.2a1.8 1.8 0 1 0 0 3.6H21v4h-4v-3.2a1.8 1.8 0 1 0-3.6 0V21H9v-3.2a1.8 1.8 0 1 0-3.6 0H3v-4h3.2a1.8 1.8 0 1 0 0-3.6H3V7h4V3z" transform="scale(.9) translate(1.3 1.3)"/></symbol>
+</svg>
+
+<main>
+  <p class="kicker">System metro map · example artifact</p>
+  <h1>Chalk — three journeys, one new station</h1>
+  <p>
+    Same system, drawn as a metro map. Each colored line is one <b>journey</b> — a real thing that happens,
+    followed stop by stop through the parts of
+    <span class="term" tabindex="0" data-def="The video-calling product this example is about. Every station is one part of it.">Chalk</span>.
+    The change adds one glowing station, the <b>Lease keeper</b> <span class="badge accent">new</span>,
+    and two of the three lines now run through it.
+  </p>
+  <p class="caption">
+    Click a line's chip (or hover the line) to follow one journey stop by stop ·
+    hover a station for its job in plain words · flip <b>Before</b> to see how the lines ran around the gap.
+  </p>
+</main>
+
+<section class="fullbleed" id="metro">
+  <div class="metro-head">
+    <span class="caption"><b style="color:var(--fg)">Chalk</b> · journeys through the system</span>
+    <span class="spacer"></span>
+    <span id="chips"></span>
+    <button id="toggle-before" aria-pressed="false">Before</button>
+    <button data-fullscreen="#metro" title="Fullscreen"><svg class="icon"><use href="#i-expand"/></svg></button>
+  </div>
+  <div class="stagewrap" id="stagewrap">
+    <svg id="map" viewBox="0 0 1240 560" role="img" aria-label="Metro map of the Chalk system"></svg>
+    <div id="tip" role="status"><span class="t-name"></span><span class="t-job"></span><span class="t-state"></span></div>
+  </div>
+  <div id="journey">
+    <p class="caption">Pick a line above to walk one journey stop by stop.</p>
+  </div>
+</section>
+
+<main style="padding-top:2rem">
+  <p class="caption">
+    Example artifact for the debrief/spec templates: the flow-first alternative to the block atlas —
+    journeys as transit lines, system parts as stations, the change as a new interchange the lines reroute through.
+  </p>
+</main>
+
+<script>
+(() => {
+  "use strict";
+  const NS = "http://www.w3.org/2000/svg";
+  const map = document.getElementById("map");
+  const g = (cls) => { const e = document.createElementNS(NS, "g"); if (cls) e.setAttribute("class", cls); map.appendChild(e); return e; };
+
+  // ---------- stations (hand-placed on the 1240x560 canvas) ----------
+  const ST = {
+    web:      { x: 120,  y: 120, name: "Web app",          job: "The Chalk website people open in a browser to join calls.", label: "above" },
+    mobile:   { x: 120,  y: 300, name: "Mobile app",       job: "The phone app — same calls, smaller screen.", label: "below" },
+    admin:    { x: 120,  y: 460, name: "Admin console",    job: "Where the team configures Chalk and watches its health.", label: "below" },
+    signin:   { x: 330,  y: 120, name: "Sign-in desk",     job: "Checks who you are before letting you in.", label: "above" },
+    engine:   { x: 540,  y: 210, name: "Call engine",      job: "Runs the live calls: joins people, moves audio and video. Now asks the Lease keeper for a machine instead of grabbing one.", label: "above", interchange: true, lab: { dx: -20, dy: 5, anchor: "end" } },
+    lease:    { x: 750,  y: 300, name: "Lease keeper",     job: "Hands out time-limited permits for cloud machines. When a permit expires, capacity is forced to zero.", label: "above", interchange: true, isNew: true, lab: { dx: 20, dy: -12, anchor: "start" } },
+    billing:  { x: 540,  y: 460, name: "Billing",          job: "Works out what each customer owes. Now charges only for machines holding a live permit.", label: "below", interchange: true },
+    rec:      { x: 540,  y: 60,  name: "Recording",        job: "Saves calls that people chose to record.", label: "above" },
+    sessions: { x: 960,  y: 120, name: "Sessions",         job: "The record of every call: who joined, when, on which machine — and now, under which permit.", label: "above", lab: { dx: 20, dy: 5, anchor: "start" } },
+    ledger:   { x: 960,  y: 460, name: "Ledger",           job: "The money book: every charge, ordered and permanent. Gains one line per permit.", label: "below" },
+    cloud:    { x: 1120, y: 300, name: "Cloud machines",   job: "Rented computers that run the calls. Started and stopped only through Lease keeper permits now.", label: "above" },
+    pay:      { x: 750,  y: 520, name: "Payment provider", job: "The outside company that actually moves the money.", label: "below" },
+  };
+
+  // ---------- lines (journeys) ----------
+  const LINES = [
+    {
+      id: "join", name: "Join a call", color: "var(--accent)",
+      story: "Someone presses “Join”: the web app checks who they are, the call engine asks the Lease keeper for a machine permit, the cloud machine runs the call, and the session is written down.",
+      after: ["web", "signin", "engine", "lease", "cloud", "sessions"],
+      before: ["web", "signin", "engine", "cloud", "sessions"],
+      reroutes: true,
+    },
+    {
+      id: "money", name: "Money", color: "var(--green)",
+      story: "Month’s end: Billing checks each permit is still live with the Lease keeper, books the charge into the Ledger, and the payment provider moves the money.",
+      after: ["admin", "billing", "lease", "ledger", "pay"],
+      before: ["admin", "billing", "ledger", "pay"],
+      reroutes: true,
+    },
+    {
+      id: "recording", name: "Recording", color: "var(--amber)",
+      story: "A recorded call: the mobile app joins through the call engine, Recording captures it, and the file is attached to the session. This journey doesn’t touch the new station.",
+      after: ["mobile", "engine", "rec", "sessions"],
+      before: ["mobile", "engine", "rec", "sessions"],
+      reroutes: false,
+    },
+  ];
+
+  // Metro-style path: orthogonal-ish with 24px rounded corners via quadratic curves.
+  function railPath(stops) {
+    const pts = stops.map((id) => ST[id]);
+    let d = `M ${pts[0].x} ${pts[0].y}`;
+    for (let k = 1; k < pts.length; k++) {
+      const a = pts[k - 1], b = pts[k];
+      if (a.x === b.x || a.y === b.y) { d += ` L ${b.x} ${b.y}`; continue; }
+      // corner: horizontal first, then rounded turn into vertical arrival
+      const r = 24, dirX = Math.sign(b.x - a.x), dirY = Math.sign(b.y - a.y);
+      d += ` L ${b.x - dirX * r} ${a.y} Q ${b.x} ${a.y} ${b.x} ${a.y + dirY * r} L ${b.x} ${b.y}`;
+    }
+    return d;
+  }
+
+  // ---------- draw rails (before-ghosts under, after-rails over) ----------
+  const gOld = g(), gRails = g(), railEls = {};
+  for (const line of LINES) {
+    if (line.reroutes) {
+      const old = document.createElementNS(NS, "path");
+      old.setAttribute("d", railPath(line.before));
+      old.setAttribute("class", "rail-old");
+      old.setAttribute("stroke", line.color);
+      gOld.appendChild(old);
+    }
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", railPath(line.after));
+    p.setAttribute("class", "rail" + (line.reroutes ? " reroutes" : ""));
+    p.setAttribute("stroke", line.color);
+    p.dataset.line = line.id;
+    gRails.appendChild(p);
+    railEls[line.id] = p;
+  }
+
+  // ---------- draw stations ----------
+  const gSt = g();
+  const stationEls = {};
+  for (const [id, s] of Object.entries(ST)) {
+    const el = document.createElementNS(NS, "g");
+    el.setAttribute("class", "station" + (s.interchange ? "" : " minor") + (s.isNew ? " is-new" : ""));
+    el.setAttribute("tabindex", "0");
+    el.setAttribute("role", "img");
+    el.setAttribute("aria-label", `${s.name}. ${s.job}`);
+    const c = document.createElementNS(NS, "circle");
+    c.setAttribute("cx", s.x); c.setAttribute("cy", s.y);
+    c.setAttribute("r", s.interchange ? 11 : 7.5);
+    el.appendChild(c);
+    const t = document.createElementNS(NS, "text");
+    const above = s.label === "above";
+    const lx = s.lab ? s.x + s.lab.dx : s.x;
+    const ly = s.lab ? s.y + s.lab.dy : (above ? s.y - (s.interchange ? 20 : 16) : s.y + (s.interchange ? 32 : 28));
+    t.setAttribute("x", lx); t.setAttribute("y", ly);
+    t.setAttribute("text-anchor", s.lab ? s.lab.anchor : "middle");
+    t.setAttribute("class", "name");
+    t.textContent = s.name;
+    el.appendChild(t);
+    if (s.isNew) {
+      const t2 = document.createElementNS(NS, "text");
+      t2.setAttribute("x", lx); t2.setAttribute("y", ly - 16);
+      t2.setAttribute("text-anchor", s.lab ? s.lab.anchor : "middle");
+      t2.setAttribute("class", "sub");
+      t2.textContent = "★ the new station";
+      el.appendChild(t2);
+    }
+    gSt.appendChild(el);
+    stationEls[id] = el;
+  }
+  // the gap marker, only visible in Before view
+  const gap = document.createElementNS(NS, "g");
+  gap.setAttribute("class", "gaptag");
+  gap.innerHTML = `<circle cx="${ST.lease.x}" cy="${ST.lease.y}" r="11" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="3 5"/>
+    <text x="${ST.lease.x}" y="${ST.lease.y - 20}" text-anchor="middle" style="fill:var(--muted);font-size:11px">the gap — no station here yet</text>`;
+  map.appendChild(gap);
+
+  // ---------- line chips + journey strip ----------
+  const chips = document.getElementById("chips");
+  const journey = document.getElementById("journey");
+  let focused = null;
+
+  for (const line of LINES) {
+    const b = document.createElement("button");
+    b.className = "linechip";
+    b.style.color = line.color;
+    b.setAttribute("aria-pressed", "false");
+    b.innerHTML = `<i style="background:${line.color}"></i>${line.name}`;
+    b.addEventListener("click", () => setFocus(focused === line.id ? null : line.id));
+    b.dataset.line = line.id;
+    chips.appendChild(b);
+  }
+
+  function setFocus(id) {
+    focused = id;
+    map.classList.toggle("focused", !!id);
+    document.querySelectorAll(".linechip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.line === id)));
+    for (const line of LINES) railEls[line.id].classList.toggle("focus", line.id === id);
+    const line = LINES.find((l) => l.id === id);
+    const stops = line ? new Set(line.after) : new Set();
+    for (const [sid, el] of Object.entries(stationEls)) el.classList.toggle("on-focus", stops.has(sid));
+    journey.innerHTML = line
+      ? `<div class="strip">${line.after.map((sid) =>
+          `<span class="stop${ST[sid].isNew ? " new" : ""}">${ST[sid].name}</span>`).join(`<span class="sep">→</span>`)}
+         </div><p class="caption">${line.story}</p>`
+      : `<p class="caption">Pick a line above to walk one journey stop by stop.</p>`;
+  }
+
+  // hovering a rail focuses it too
+  gRails.addEventListener("mouseover", (e) => { if (e.target.dataset.line) setFocus(e.target.dataset.line); });
+
+  // ---------- before/after ----------
+  const beforeBtn = document.getElementById("toggle-before");
+  beforeBtn.addEventListener("click", () => {
+    const on = beforeBtn.getAttribute("aria-pressed") !== "true";
+    beforeBtn.setAttribute("aria-pressed", String(on));
+    document.getElementById("metro").classList.toggle("before", on);
+    map.classList.toggle("before", on);
+    document.querySelectorAll(".fullbleed, #map").forEach((el) => el.classList.toggle("before", on));
+  });
+
+  // ---------- station tooltip ----------
+  const tip = document.getElementById("tip");
+  const wrap = document.getElementById("stagewrap");
+  function showTip(id) {
+    const s = ST[id];
+    tip.querySelector(".t-name").textContent = s.name + " — ";
+    tip.querySelector(".t-job").textContent = s.job;
+    const st = tip.querySelector(".t-state");
+    st.textContent = s.isNew ? "★ New in this change" : (s.interchange ? "Interchange — several journeys meet here" : "");
+    st.className = "t-state" + (s.isNew ? " new" : "");
+    const w = wrap.getBoundingClientRect();
+    const scale = w.width / 1240;
+    tip.style.left = Math.min(Math.max(s.x * scale - 60, 0), w.width - 310) + "px";
+    tip.style.top = (s.y * (map.getBoundingClientRect().height / 560) + 18) + "px";
+    tip.classList.add("show");
+  }
+  for (const [id, el] of Object.entries(stationEls)) {
+    el.addEventListener("mouseenter", () => showTip(id));
+    el.addEventListener("mouseleave", () => tip.classList.remove("show"));
+    el.addEventListener("focus", () => showTip(id));
+    el.addEventListener("blur", () => tip.classList.remove("show"));
+  }
+
+  // ---------- fullscreen ----------
+  document.querySelectorAll("[data-fullscreen]").forEach((b) =>
+    b.addEventListener("click", () =>
+      document.fullscreenElement
+        ? document.exitFullscreen()
+        : document.querySelector(b.dataset.fullscreen).requestFullscreen()));
+})();
+</script>
+</body>
+</html>

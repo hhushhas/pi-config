@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-16
+
+- Converted the live Pi configuration into the versioned `portable-pi-setup` package with an explicit extension, prompt, and skill manifest; machine-relative settings; pinned package and CLI versions; a production shrinkwrap; and a restricted publish allowlist.
+- Added a cross-platform installer that backs up managed live resources, preserves credentials and mutable state, installs real skill files instead of symlinks, and provisions the canonical settings, keybindings, support templates, visual examples, and Reading Room.
+- Added a doctor command and distribution tests for resource parity, path portability, owner-name removal, private-state preservation, package placement, and settings pins.
+- Replaced the macOS-only `/usr/bin/lockf` workflow lock with `proper-lockfile`, made directory durability handling Windows-safe, and corrected Windows absolute-path and migration-backup handling.
+- Packaged the live destructive-command guard with PATH-based executable discovery, fixed `/orchestrate` frontmatter, made Codex review timeouts cross-platform, and removed owner names, account profiles, and absolute home paths from the distributable setup.
+- Vendored the MIT-declared auto-name 0.3.3 extension with the live concise-English naming patch and portable agent-directory resolution, eliminating the last cache-only behavior change.
+
 ## 2026-07-15
 
 - Vendored and adapted Ben Davis's background-terminal implementation at `d8534d7e6ec6609b7e684a8a0eb2e7a0195115ba`, including backpressured private full-output spills, bounded model-visible tails, exactly-once completion delivery, launched-process-group termination, `/ps`, and session-shutdown cleanup.

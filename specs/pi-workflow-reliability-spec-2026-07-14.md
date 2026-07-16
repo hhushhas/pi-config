@@ -1,15 +1,15 @@
 # Pi Workflow Reliability Spec
 
 Status: Done — Safety Release A and Reliability Release B are installed and verified
-Owner: Hasan Shoaib
-Repository: `/Users/macmini/code/pi-config`
+Owner: Setup maintainers
+Repository: `portable-pi-setup`
 Target: the dependency-aware workflow extension and its pinned `pi-subagents` runtime
 
 ## Outcome
 
 Pi workflows must remain correct when agents are paused, stopped, resumed, revived, or run in another worktree. The scheduler must never lose ownership of a live child, unblock a dependent from an unverified result, report a failed control as successful, or make the parent model ingest full workflow state merely to observe the fleet.
 
-Hasan can launch a long-running DAG, leave the parent idle, inspect it through `/fleet`, safely intervene through workflow-owned controls, and receive one bounded notification when the workflow completes or genuinely needs a decision. Five quiet minutes do not interrupt a productive agent. The parent conversation remains small because reports and raw telemetry stay in artifacts.
+A user can launch a long-running DAG, leave the parent idle, inspect it through `/fleet`, safely intervene through workflow-owned controls, and receive one bounded notification when the workflow completes or genuinely needs a decision. Five quiet minutes do not interrupt a productive agent. The parent conversation remains small because reports and raw telemetry stay in artifacts.
 
 This is a repair of the existing design. It is not a replacement scheduler or a general workflow language.
 
@@ -29,7 +29,7 @@ These are acceptance-test fixtures, not historical commentary. The implementatio
 
 Both releases run through the immutable `hhushhas/pi-subagents` commit `5cccd64d39a2e6a95ed557bde24dfcac1f17309e`, pinned identically in the repository and live Pi settings. The runtime package passed 991 unit tests, 465 integration tests, and its real Pi-session end-to-end test. The configuration passed strict typechecking and all 28 scheduler, migration, race, output-budget, and Fleet tests.
 
-The live proof ran in `/Users/macmini/code/pi-release-proof-worktree-20260714-192720-v2` from fresh Pi sessions `019f6106-b181-7e5d-bc7c-762e6a6f3ca4` and `019f6116-8ac2-7b0d-a890-ec06b177b6eb`:
+The live proof ran in `<temporary proof worktree>` from fresh Pi two isolated temporary sessions:
 
 - Workflow `wf-mrkqx4hh-87cc4cb3` completed a three-node fan-out/fan-in DAG, then retried `a` as `attempt-2`; the replacement merge launched afterward with bindings `{a: attempt-2, b: attempt-1}`. Across the initial run and retry it recorded 29,732 child tokens, `$0.047878`, two bounded 189-byte notifications, and two parent wakes—one per successful terminal episode.
 - Workflow `wf-mrkr39vr-2378a89e` causally paused under control `6f81d2a5-13a0-46a8-864a-e71ce1a7457a`, resumed from the paused child as `attempt-2`, and completed the expected file.

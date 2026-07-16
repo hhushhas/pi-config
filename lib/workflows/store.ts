@@ -1,5 +1,4 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
 import {
   chmodSync,
   closeSync,
@@ -14,7 +13,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { realpath } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import lockfile from "proper-lockfile";
 import { emptyTelemetry, type LegacyAttemptV2, type WorkflowNode, type WorkflowRun } from "./model.ts";
 
 function projectKey(cwd: string): string {
@@ -68,52 +68,39 @@ function writeDurableJson(file: string, value: unknown, mode = 0o600): void {
   }
   renameSync(temp, file);
   chmodSync(file, mode);
-  const dirFd = openSync(dirname(file), "r");
-  try { fsyncSync(dirFd); } finally { closeSync(dirFd); }
+  // Windows does not support opening directories for fsync. File fsync plus
+  // atomic rename is the strongest portable durability boundary available.
+  if (process.platform !== "win32") {
+    const dirFd = openSync(dirname(file), "r");
+    try { fsyncSync(dirFd); } finally { closeSync(dirFd); }
+  }
 }
 
 interface LockHandle { release(): Promise<void> }
 
 async function acquireLock(lockFile: string, timeoutMs = 5000): Promise<LockHandle> {
   mkdirSync(dirname(lockFile), { recursive: true, mode: 0o700 });
-  if (!existsSync("/usr/bin/lockf")) throw new Error("Workflow writes require /usr/bin/lockf on this platform.");
-  const helper = 'process.stdout.write("READY\\n");process.stdin.once("end",()=>process.exit(0));process.stdin.resume();';
-  const child = spawn("/usr/bin/lockf", ["-k", "-t", String(Math.max(1, Math.ceil(timeoutMs / 1000))), lockFile, process.execPath, "-e", helper], {
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  await new Promise<void>((resolve, reject) => {
-    let output = "";
-    let settled = false;
-    const fail = (error: Error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      child.kill("SIGTERM");
-      reject(error);
-    };
-    const timer = setTimeout(() => fail(new Error(`Timed out acquiring workflow lock '${lockFile}'.`)), timeoutMs + 1000);
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      output += chunk;
-      if (!output.includes("READY") || settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve();
+  closeSync(openSync(lockFile, "a", 0o600));
+  chmodSync(lockFile, 0o600);
+
+  try {
+    const release = await lockfile.lock(lockFile, {
+      realpath: false,
+      stale: 60_000,
+      update: 10_000,
+      retries: {
+        retries: Math.max(0, Math.ceil(timeoutMs / 100) - 1),
+        factor: 1,
+        minTimeout: 100,
+        maxTimeout: 100,
+        randomize: false,
+      },
     });
-    child.once("error", (error) => fail(error));
-    child.once("exit", (code) => {
-      if (!output.includes("READY")) fail(new Error(`Could not acquire workflow lock '${lockFile}' (lockf exit ${code ?? "unknown"}).`));
-    });
-  });
-  return {
-    async release() {
-      child.stdin.end();
-      await new Promise<void>((resolve) => {
-        if (child.exitCode !== null) return resolve();
-        child.once("exit", () => resolve());
-      });
-    },
-  };
+    return { release };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not acquire workflow lock '${lockFile}' within ${timeoutMs}ms: ${reason}`);
+  }
 }
 
 export class WorkflowStore {
@@ -261,7 +248,7 @@ export class WorkflowStore {
       const backup = join(directory, `state.v1.${sourceHash}.json`);
       const journal = join(directory, "migration-v1-v2.json");
       const leaseId = randomUUID();
-      writeDurableJson(journal, { migrationId: randomUUID(), sourceHash, sourceRevision: Number(value.stateRevision) || 0, targetSchema: 2, phase: "prepared", backup: backup.split("/").at(-1), leaseId });
+      writeDurableJson(journal, { migrationId: randomUUID(), sourceHash, sourceRevision: Number(value.stateRevision) || 0, targetSchema: 2, phase: "prepared", backup: basename(backup), leaseId });
       if (!existsSync(backup)) {
         const fd = openSync(backup, "wx", 0o600);
         try { writeFileSync(fd, raw, "utf8"); fsyncSync(fd); } finally { closeSync(fd); }
