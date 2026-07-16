@@ -12,17 +12,17 @@ The desired state is one visual grammar across all three surfaces. A user should
 
 ## Proposed behavior
 
-- Inline cards use the same hierarchy: lifecycle and identity first, current activity second, bounded output only when useful.
+- Inline cards are compact by default and use the same hierarchy: lifecycle and identity first, current activity second, with bounded output available through expansion and details.
 - The footer carries one aggregate orchestration summary. A widget appears only for actionable attention, avoiding permanent vertical clutter.
 - Full-screen lists and detail screens share chrome, status colors, navigation, metadata labels, and transcript/artifact treatment.
 - Each run visibly identifies its kind and harness: role agent, workflow node, or direct agent; Pi, Claude, Codex, or Grok.
 - Controls are capability-aware and never imply guarantees the backend cannot provide.
 
-## Open decisions represented in the demo
+## Settled interaction defaults
 
-1. Default inline density: compact or expanded.
-2. Whether attention should create a temporary widget above the editor; recommendation: yes, while routine progress remains in the footer.
-3. Whether wide full-screen views should default to master-detail; recommendation: yes, with list-to-detail drill-down on narrow terminals.
+- Inline cards are compact by default.
+- Routine activity stays in the aggregate footer; actionable attention creates a temporary widget above the editor.
+- Every full-screen agent interface uses a responsive master-detail layout on wide terminals and list-to-detail drill-down on narrow terminals.
 
 ## Demo acceptance
 
