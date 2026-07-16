@@ -12,6 +12,10 @@ import {
 } from "@earendil-works/pi-tui";
 import type { SubagentSnapshot, TranscriptItem } from "../domain.ts";
 
+const MAX_TRANSCRIPT_ITEMS = 200;
+const MAX_TRANSCRIPT_TEXT_CHARS = 64 * 1024;
+const MAX_TRANSCRIPT_LINES = 2_000;
+
 const ANSI_PATTERN =
   // eslint-disable-next-line no-control-regex
   /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
@@ -25,7 +29,8 @@ export function sanitizeText(text: string): string {
   return text
     .replace(ANSI_PATTERN, "")
     .replaceAll("\t", "  ")
-    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
+    .slice(-MAX_TRANSCRIPT_TEXT_CHARS);
 }
 
 function renderUserText(
@@ -120,7 +125,7 @@ export function buildTranscriptLines(
 ): string[] {
   const out: string[] = [];
 
-  for (const item of snap.transcript) {
+  for (const item of snap.transcript.slice(-MAX_TRANSCRIPT_ITEMS)) {
     const before = out.length;
     if (item.kind === "user") {
       renderUserText(theme, item.text, width, out);
@@ -178,5 +183,5 @@ export function buildTranscriptLines(
     }
   }
 
-  return out;
+  return out.slice(-MAX_TRANSCRIPT_LINES);
 }

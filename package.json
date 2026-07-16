@@ -28,8 +28,12 @@
     "extensions/subagents/index.ts",
     "extensions/subagents/README.md",
     "extensions/subagents/src/",
+    "extensions/ui-dashboard.ts",
     "keybindings.json",
+    "lib/dashboard/footer.ts",
+    "lib/dashboard/metrics.ts",
     "lib/dashboard/state.ts",
+    "lib/orchestration/ui.ts",
     "lib/workflows/fleet-overlay.ts",
     "lib/workflows/model.ts",
     "lib/workflows/projection.ts",
@@ -59,7 +63,8 @@
       "extensions/dcg-guard.ts",
       "extensions/manual-only-skills.ts",
       "extensions/openai-image-generation.ts",
-      "extensions/auto-name/index.ts"
+      "extensions/auto-name/index.ts",
+      "extensions/ui-dashboard.ts"
     ],
     "skills": [
       "skills/codex-review/SKILL.md",

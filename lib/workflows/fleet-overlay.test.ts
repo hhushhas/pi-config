@@ -71,6 +71,7 @@ function workflow(): WorkflowRun {
 
 function harness(controllable = true) {
   const listeners = new Set<() => void>();
+  let currentWorkflow = workflow();
   let renders = 0;
   let retries = 0;
   let pauses = 0;
@@ -95,7 +96,7 @@ function harness(controllable = true) {
     }[binding] === data),
   } as KeybindingsManager;
   const actions: FleetActions = {
-    snapshot: () => [workflow()],
+    snapshot: () => [currentWorkflow],
     isControllable: () => controllable,
     subscribe: (listener) => {
       listeners.add(listener);
@@ -110,7 +111,17 @@ function harness(controllable = true) {
     notify: (message) => { notices.push(message); },
   };
   const overlay = new FleetOverlay(tui, theme, keybindings, () => { closes += 1; }, actions);
-  return { overlay, listeners, notices, get renders() { return renders; }, get retries() { return retries; }, get pauses() { return pauses; }, get stops() { return stops; }, get closes() { return closes; } };
+  return {
+    overlay,
+    listeners,
+    notices,
+    replaceWorkflow(next: WorkflowRun) { currentWorkflow = next; for (const listener of listeners) listener(); },
+    get renders() { return renders; },
+    get retries() { return retries; },
+    get pauses() { return pauses; },
+    get stops() { return stops; },
+    get closes() { return closes; },
+  };
 }
 
 test("fleet rendering fills the screen and stays inside narrow and wide terminal widths", () => {
@@ -136,6 +147,23 @@ test("narrow fleet view drills into details and escape returns before closing", 
 
     state.overlay.handleInput("escape");
     assert.equal(state.closes, 1);
+  } finally { state.overlay.dispose(); }
+});
+
+test("fleet selection follows stable workflow and node ids as rows are inserted", () => {
+  const state = harness();
+  try {
+    state.overlay.render(120);
+    state.overlay.handleInput("down");
+    const next = workflow();
+    next.nodes = {
+      aaa: { spec: { id: "aaa", label: "New independent node", agent: "scout", task: "new", dependsOn: [] }, status: "queued", attempts: [] },
+      ...next.nodes,
+    };
+    state.replaceWorkflow(next);
+    const rendered = state.overlay.render(120).join("\n");
+    assert.match(rendered, /build/);
+    assert.match(rendered, /worker/);
   } finally { state.overlay.dispose(); }
 });
 

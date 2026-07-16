@@ -24,6 +24,12 @@ The desired state is one visual grammar across all three surfaces. A user should
 - Routine activity stays in the aggregate footer; actionable attention creates a temporary widget above the editor.
 - Every full-screen agent interface uses a responsive master-detail layout on wide terminals and list-to-detail drill-down on narrow terminals.
 
+## Local implementation boundary
+
+The portable setup can unify role-agent inline results, the aggregate footer, and actionable-attention handling through the pinned `pi-subagents` public message and event surface (`subagent-notify`, `subagent_control_notice`, `subagent:async-started`, `subagent:async-complete`, and `subagent:control-event`). It must not read or mutate the package's private in-memory run registry.
+
+The role runtime's full-screen `subagents-fleet` status UI and its routine `subagent-async` widget are constructed inside pinned commit `5cccd64d39a2e6a95ed557bde24dfcac1f17309e` (`src/tui/render.ts` and `src/slash/slash-commands.ts`). That package exposes no command replacement, run-list snapshot, widget-disable setting, or detail-component factory. Consequently this repository cannot safely replace the role-agent full detail view or permanently suppress its private poll-driven routine widget. Finishing those two surfaces requires an upstream package patch that exports a read-only run projection/detail component and makes routine widget rendering configurable (or emits its reconciled projection so the local aggregate can own it). Local code intentionally does not fake role-runtime controls or infer private state from cache artifacts.
+
 ## Demo acceptance
 
 - Switch between current and proposed worlds.

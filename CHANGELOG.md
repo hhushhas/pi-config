@@ -2,6 +2,7 @@
 
 ## 2026-07-16
 
+- Unified orchestration presentation across Pi role agents, direct agents, and durable workflows with defensive shared renderers for public role/workflow notifications, structured workflow lifecycle metadata, compact bounded inline cards, one aggregate footer, transient actionable-attention notices, shared status/chrome helpers, stable-ID selection, and responsive wide master-detail/narrow drill-down direct-agent takeover; documented the pinned Pi role runtime seam that still requires an upstream full-detail/widget patch.
 - Added optional durable workflow node harness selection for Claude Code, Codex, and Grok, with persisted backend operations, cross-process launch and resume reservations, detached artifact-owning runners, authority-routed status, replay-safe causal control journals, pause/resume lineage, restart lookup, bounded results, lifecycle-scoped bridge listeners, backward-compatible Pi defaults, and Fleet/status harness metadata.
 - Reworked `/fleet` into a full-screen responsive workspace: wide terminals keep the workflow-node list and selected-node details side by side, while narrow terminals use list-to-detail drill-down navigation consistent with `/ps`.
 - Converted the live Pi configuration into the versioned `portable-pi-setup` package with an explicit extension, prompt, and skill manifest; machine-relative settings; pinned package and CLI versions; a production shrinkwrap; and a restricted publish allowlist.

@@ -7,6 +7,7 @@ import {
   type KeybindingsManager,
   type TUI,
 } from "@earendil-works/pi-tui";
+import { orchestrationBorderSegment, padToWidth } from "../orchestration/ui.ts";
 import {
   currentAttempt,
   effectiveNodeStatus,
@@ -61,13 +62,9 @@ function formatTokens(tokens: number | undefined): string {
   return tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : String(tokens);
 }
 
-function padAnsi(text: string, width: number): string {
-  const clipped = truncateToWidth(text, Math.max(0, width), "…", true);
-  return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
-}
-
 export class FleetOverlay implements Component {
   private selected = 0;
+  private selectedId?: string;
   private narrowDetails = false;
   private lastRenderWidth = 80;
   private disposed = false;
@@ -115,13 +112,11 @@ export class FleetOverlay implements Component {
       return;
     }
     if (!this.narrowDetails && this.keybindings.matches(data, "tui.select.up")) {
-      this.selected = Math.max(0, this.selected - 1);
-      this.tui.requestRender();
+      this.moveSelection(-1);
       return;
     }
     if (!this.narrowDetails && this.keybindings.matches(data, "tui.select.down")) {
-      this.selected = Math.min(Math.max(0, this.entries().length - 1), this.selected + 1);
-      this.tui.requestRender();
+      this.moveSelection(1);
       return;
     }
     if (matchesKey(data, "h")) {
@@ -170,6 +165,7 @@ export class FleetOverlay implements Component {
 
     const innerWidth = Math.max(1, width - 2);
     const entries = this.entries();
+    this.reconcileSelection(entries);
     const selected = entries[this.selected];
     const all = this.actions.snapshot();
     const live = all.flatMap((workflow) => Object.values(workflow.nodes)).filter((node) => ["launching", "running", "pausing", "stopping"].includes(node.status)).length;
@@ -186,7 +182,7 @@ export class FleetOverlay implements Component {
     const panelTitle = width < 100 && this.narrowDetails
       ? `node details · ${selected?.node.spec.label ?? selected?.node.spec.id ?? "none"}`
       : `workflow nodes · ${entries.length} shown`;
-    lines.push(this.border("╭") + this.borderSegment(innerWidth, panelTitle) + this.border("╮"));
+    lines.push(this.border("╭") + orchestrationBorderSegment(this.theme, innerWidth, panelTitle) + this.border("╮"));
 
     let body: string[];
     if (!selected) {
@@ -231,7 +227,7 @@ export class FleetOverlay implements Component {
     const left = this.renderList(entries, leftWidth, height);
     const right = this.renderDetails(selected, rightWidth, height);
     return Array.from({ length: height }, (_, index) =>
-      `${padAnsi(left[index] ?? "", leftWidth)}${this.theme.fg("borderMuted", "│")}${padAnsi(right[index] ?? "", rightWidth)}`,
+      `${padToWidth(left[index] ?? "", leftWidth)}${this.theme.fg("borderMuted", "│")}${padToWidth(right[index] ?? "", rightWidth)}`,
     );
   }
 
@@ -251,7 +247,7 @@ export class FleetOverlay implements Component {
       const text = ` ${GLYPHS[status] ?? "?"} ${label}${dependency}`;
       const colored = this.statusColor(status, text);
       if (index === this.selected) selectedLine = lines.length;
-      lines.push(index === this.selected ? this.theme.bg("selectedBg", padAnsi(colored, width)) : colored);
+      lines.push(index === this.selected ? this.theme.bg("selectedBg", padToWidth(colored, width)) : colored);
     }
     const start = Math.max(0, Math.min(selectedLine - Math.floor(limit / 2), lines.length - limit));
     return lines.slice(start, start + limit).map((line) => truncateToWidth(line, width, "…", true));
@@ -306,8 +302,28 @@ export class FleetOverlay implements Component {
     }
   }
 
+  private entryId(entry: NodeRef): string {
+    return `${entry.workflow.id}:${entry.node.spec.id}`;
+  }
+
+  private reconcileSelection(entries = this.entries()): void {
+    const stable = this.selectedId ? entries.findIndex((entry) => this.entryId(entry) === this.selectedId) : -1;
+    this.selected = stable >= 0
+      ? stable
+      : Math.min(this.selected, Math.max(0, entries.length - 1));
+    this.selectedId = entries[this.selected] ? this.entryId(entries[this.selected]) : undefined;
+  }
+
   private clampSelection(): void {
-    this.selected = Math.min(this.selected, Math.max(0, this.entries().length - 1));
+    this.reconcileSelection();
+  }
+
+  private moveSelection(delta: number): void {
+    const entries = this.entries();
+    this.reconcileSelection(entries);
+    this.selected = Math.max(0, Math.min(Math.max(0, entries.length - 1), this.selected + delta));
+    this.selectedId = entries[this.selected] ? this.entryId(entries[this.selected]) : undefined;
+    this.tui.requestRender();
   }
 
   private statusColor(status: string, text: string): string {
@@ -318,15 +334,8 @@ export class FleetOverlay implements Component {
     return this.theme.fg("muted", text);
   }
 
-  private borderSegment(width: number, title: string): string {
-    const label = title ? ` ${truncateToWidth(title, Math.max(0, width - 3))} ` : "";
-    return this.border("─") +
-      (label ? this.theme.fg("text", label) : "") +
-      this.border("─".repeat(Math.max(0, width - 1 - visibleWidth(label))));
-  }
-
   private row(text: string, width: number): string {
-    return this.border("│") + padAnsi(text, width) + this.border("│");
+    return this.border("│") + padToWidth(text, width) + this.border("│");
   }
 
   private border(text: string): string {

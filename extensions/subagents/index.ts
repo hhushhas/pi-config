@@ -34,11 +34,9 @@ import {
   DEFAULT_MAX_LINES,
   formatSize,
   getAgentDir,
-  getMarkdownTheme,
   ProjectTrustStore,
   truncateHead,
 } from "@earendil-works/pi-coding-agent";
-import { Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
   BACKEND_NAMES,
@@ -47,10 +45,7 @@ import {
   REASONING_EFFORTS,
   type SubagentSnapshot,
 } from "./src/domain.ts";
-import {
-  formatActivityStatus,
-  formatContextUtilization,
-} from "./src/format.ts";
+import { formatContextUtilization } from "./src/format.ts";
 import { SubagentManager, type SubagentManagerShape } from "./src/manager.ts";
 import {
   buildSubagentResultMessage,
@@ -75,6 +70,8 @@ import {
   type SubagentRuntime,
 } from "./src/runtime.ts";
 import { openSubagentPicker } from "./src/ui/takeover.ts";
+import { DIRECT_AGENT_INFO_CHANNEL } from "../../lib/dashboard/state.ts";
+import { renderInlineAgentCard } from "../../lib/orchestration/ui.ts";
 
 const SUBAGENT_OUTPUT_MAX_BYTES = 24 * 1024;
 const WAIT_OUTPUT_MAX_BYTES = 48 * 1024;
@@ -160,19 +157,11 @@ export default function (pi: ExtensionAPI) {
   };
 
   const updateStatus = (manager: SubagentManagerShape) => {
-    if (!ui) return;
     const subs = manager.view.list();
-    if (subs.length === 0) {
-      ui.setStatus("subagents", undefined);
-      return;
-    }
     const running = subs.filter((snap) => snap.status === "running").length;
-    const failed = subs.filter((snap) => snap.status === "error").length;
-    const done = subs.length - running - failed;
-    ui.setStatus(
-      "subagents",
-      formatActivityStatus(ui.theme, { running, done, failed }),
-    );
+    pi.events.emit(DIRECT_AGENT_INFO_CHANNEL, { runningAgents: running });
+    // Routine activity is rendered once by the aggregate orchestration footer.
+    ui?.setStatus("subagents", undefined);
   };
 
   const deliverResult = (snap: SubagentSnapshot) => {
@@ -187,7 +176,14 @@ export default function (pi: ExtensionAPI) {
           output: truncatedOutput(snap),
         }),
         display: true,
-        details: { id: snap.id, title: snap.title, status: snap.status },
+        details: {
+          id: snap.id,
+          title: snap.title,
+          status: snap.status,
+          harness: snap.backend,
+          model: snap.meta.modelLabel,
+          elapsed: formatElapsed(snap),
+        },
       },
       { deliverAs: "followUp", triggerTurn: true },
     );
@@ -217,7 +213,7 @@ export default function (pi: ExtensionAPI) {
     workflowBackend.dispose();
     workflowBackend.start();
     sessionContext = ctx;
-    if (ctx.hasUI) ui = ctx.ui;
+    ui = ctx.hasUI ? ctx.ui : undefined;
   });
 
   pi.on("agent_settled", flushResults);
@@ -229,6 +225,8 @@ export default function (pi: ExtensionAPI) {
     unsubStatus?.();
     unsubStatus = undefined;
     ui?.setStatus("subagents", undefined);
+    ui = undefined;
+    pi.events.emit(DIRECT_AGENT_INFO_CHANNEL, { runningAgents: 0 });
     const closing = runtime;
     runtime = undefined;
     managerPromise = undefined;
@@ -271,6 +269,31 @@ export default function (pi: ExtensionAPI) {
         }),
       ),
     }),
+    renderCall(params, theme) {
+      return renderInlineAgentCard(theme, {
+        lifecycle: "running",
+        title: params.name?.trim() || "direct agent",
+        kind: "direct agent",
+        harness: params.harness,
+        identity: params.model,
+        activity: `launching in ${params.working_dir ?? "."}`,
+        metadata: ["takeover/follow-up", "cancel"],
+      }, false);
+    },
+    renderResult(result, { expanded }, theme) {
+      const details = result.details as { id?: string; title?: string; harness?: string; model?: string; cwd?: string } | undefined;
+      const output = result.content.find((item) => item.type === "text")?.text ?? "";
+      return renderInlineAgentCard(theme, {
+        lifecycle: "running",
+        title: details?.title ?? "Direct agent",
+        kind: "direct agent",
+        harness: details?.harness ?? "Pi",
+        identity: details?.id,
+        activity: details?.cwd ? `running in ${details.cwd}` : "launch accepted",
+        output,
+        metadata: [details?.model ?? "model pending", "takeover/follow-up", "cancel"],
+      }, expanded);
+    },
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const manager = await getManager();
       const harness = params.harness;
@@ -534,45 +557,24 @@ export default function (pi: ExtensionAPI) {
         id?: string;
         title?: string;
         status?: string;
+        harness?: string;
+        model?: string;
+        elapsed?: string;
       };
-      const failed = details.status === "error";
-      const icon = failed ? theme.fg("error", "x") : theme.fg("success", "■");
-      const header =
-        `${icon} ` +
-        theme.fg("accent", theme.bold(`subagent ${details.id ?? "?"}`)) +
-        theme.fg(
-          "muted",
-          ` · ${details.title ?? ""} · ${failed ? "failed" : "finished"}`,
-        );
-
-      const content =
-        typeof message.content === "string" ? message.content : "";
-      // Remove only the summary line. The following Error line (when present)
-      // is part of the actual result and must remain visible.
+      const content = typeof message.content === "string" ? message.content : "";
+      // Remove only the summary line. The following Error line remains output.
       const body = content.split("\n").slice(1).join("\n").trim();
-
-      if (expanded) {
-        const md = new Markdown(`${body}`, 0, 0, getMarkdownTheme());
-        const container = new Text(header, 0, 0);
-        return {
-          render: (width: number) => [
-            ...container.render(width),
-            ...md.render(width),
-          ],
-          invalidate: () => {
-            container.invalidate();
-            md.invalidate();
-          },
-        };
-      }
-
-      const previewLines = body.split("\n").slice(0, 8);
-      let text = header;
-      for (const line of previewLines)
-        text += `\n${theme.fg("toolOutput", line)}`;
-      if (body.split("\n").length > 8)
-        text += `\n${theme.fg("dim", "... (ctrl+o to expand)")}`;
-      return new Text(text, 0, 0);
+      return renderInlineAgentCard(theme, {
+        lifecycle: details.status === "error" ? "failed" : "done",
+        title: details.title ?? `Subagent ${details.id ?? "?"}`,
+        kind: "direct agent",
+        harness: details.harness ?? "Pi",
+        identity: details.id,
+        elapsed: details.elapsed,
+        activity: details.status === "error" ? "failed · inspect output" : "completed · result ready",
+        output: body,
+        metadata: [details.model ?? "model unavailable", "follow-up/takeover available in /subagents"],
+      }, expanded);
     },
   );
 

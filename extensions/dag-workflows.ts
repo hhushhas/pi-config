@@ -3,11 +3,12 @@ import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil
 import { Type } from "typebox";
 import { FleetOverlay } from "../lib/workflows/fleet-overlay.ts";
 import { SubagentRpcClient } from "../lib/workflows/rpc-client.ts";
-import { WorkflowScheduler } from "../lib/workflows/scheduler.ts";
+import { WorkflowScheduler, type WorkflowNotificationDetails } from "../lib/workflows/scheduler.ts";
 import { WorkflowStore } from "../lib/workflows/store.ts";
 import { inspectProjection, listProjection, statusProjection } from "../lib/workflows/projection.ts";
 import { WORKFLOW_INFO_CHANNEL } from "../lib/dashboard/state.ts";
 import { currentAttempt } from "../lib/workflows/model.ts";
+import { renderInlineAgentCard, type OrchestrationLifecycle } from "../lib/orchestration/ui.ts";
 
 const ThinkingSchema = Type.Union([
   Type.Literal("off"),
@@ -63,6 +64,42 @@ interface WorkflowToolDetails {
   status?: string;
 }
 
+export function renderWorkflowNotification(
+  details: WorkflowNotificationDetails,
+  message: string,
+  expanded: boolean,
+  theme: Parameters<typeof renderInlineAgentCard>[0],
+) {
+  const lifecycle: OrchestrationLifecycle = details.status === "succeeded"
+    ? "done"
+    : details.status === "paused"
+      ? "paused"
+      : details.status === "stopped"
+        ? "stopped"
+        : details.status === "blocked"
+          ? "attention"
+          : "failed";
+  return renderInlineAgentCard(theme, {
+    lifecycle,
+    title: details.name,
+    kind: "workflow node",
+    harness: details.harnesses.join("/") || "Pi",
+    identity: details.workflowId,
+    activity: `${details.status} · ${details.completed}/${details.total} nodes succeeded${details.failedNodeIds.length ? ` · failed ${details.failedNodeIds.join(", ")}` : ""}`,
+    output: message,
+    metadata: [`${details.totalTokens} tokens`, `$${details.costUsd.toFixed(4)}`, details.statePath],
+  }, expanded);
+}
+
+export function registerWorkflowNotificationRenderer(pi: Pick<ExtensionAPI, "registerMessageRenderer">): void {
+  pi.registerMessageRenderer<WorkflowNotificationDetails>("workflow-notify", (message, { expanded }, theme) => {
+    const details = message.details as WorkflowNotificationDetails | undefined;
+    if (!details) return undefined;
+    const content = typeof message.content === "string" ? message.content : "";
+    return renderWorkflowNotification(details, content, expanded, theme);
+  });
+}
+
 function requireValue(value: string | undefined, label: string): string {
   if (!value?.trim()) throw new Error(`${label} is required.`);
   return value.trim();
@@ -74,6 +111,7 @@ function modelName(ctx: ExtensionContext): string | undefined {
 }
 
 export default function (pi: ExtensionAPI) {
+  registerWorkflowNotificationRenderer(pi);
   let scheduler: WorkflowScheduler | undefined;
   let rpc: SubagentRpcClient | undefined;
   let promptController: AbortController | undefined;
@@ -108,32 +146,28 @@ export default function (pi: ExtensionAPI) {
         sessionId,
         ping.session.sessionFile ?? undefined,
         modelName(ctx),
-        async (message, level, triggerTurn) => {
+        async (message, level, triggerTurn, details) => {
           ctx.ui.notify(message, level);
-          if (triggerTurn) pi.sendMessage({ customType: "workflow-notify", content: message, display: true }, { triggerTurn: true });
+          if (triggerTurn) {
+            pi.sendMessage({ customType: "workflow-notify", content: message, display: true, details }, { triggerTurn: true });
+          }
         },
       );
       unsubscribers = [
         pi.events.on("subagent:async-complete", (value) => scheduler?.handleCompletion(value)),
-        pi.events.on("subagent:control-event", (value) => {
-          const event = (value as { event?: { type?: string; runId?: string } } | undefined)?.event;
-          if (event?.type !== "needs_attention" || !event.runId) return;
-          const belongsToWorkflow = scheduler?.snapshot().some((workflow) =>
-            Object.values(workflow.nodes).some((node) => currentAttempt(node)?.packageRunId === event.runId),
-          );
-          if (belongsToWorkflow) ctx.ui.setStatus("dag-workflows", "workflow attention");
-        }),
       ];
       await scheduler.initialize();
 
       const updateStatus = () => {
         const workflows = scheduler?.snapshot() ?? [];
-        const active = workflows.filter((workflow) => workflow.status === "active").length;
-        const waiting = workflows.filter((workflow) => workflow.status === "awaiting_resume").length;
+        const waiting = workflows.filter((workflow) => ["awaiting_resume", "paused"].includes(workflow.status)).length;
         const live = workflows.filter((workflow) => Object.values(workflow.nodes).some((node) => ["launching", "running", "pausing", "stopping"].includes(node.status)));
         const single = live.length === 1 ? live[0] : undefined;
+        const attention = workflows.reduce((total, workflow) => total + Object.values(workflow.nodes).filter((node) => currentAttempt(node)?.telemetry?.activityState === "needs_attention").length, 0);
         pi.events.emit(WORKFLOW_INFO_CHANNEL, {
           active: live.length,
+          paused: waiting,
+          attention,
           runningAgents: live.reduce((total, workflow) => total + Object.values(workflow.nodes).filter((node) => ["launching", "running", "pausing", "stopping"].includes(node.status)).length, 0),
           ...(single ? {
             name: single.name,
@@ -141,7 +175,8 @@ export default function (pi: ExtensionAPI) {
             total: Object.keys(single.nodes).length,
           } : {}),
         });
-        ctx.ui.setStatus("dag-workflows", active > 0 ? `${active} workflows active` : waiting > 0 ? `${waiting} workflows paused` : undefined);
+        // Routine workflow progress belongs to the aggregate dashboard footer.
+        ctx.ui.setStatus("dag-workflows", undefined);
       };
       statusUnsubscribe = scheduler.subscribe(updateStatus);
       updateStatus();
@@ -165,6 +200,41 @@ export default function (pi: ExtensionAPI) {
     description:
       "Create and control durable dependency-aware agent DAGs across Pi, Claude Code, Codex, and Grok. Set a node harness only for an external backend; omission preserves Pi role execution. All nodes use persisted attempts, idempotent launch lookup, lease fencing, causal controls, and artifact reconciliation; this tool never delegates durable nodes through session-local subagent_spawn. Independent nodes run concurrently; dependent nodes wait for successful authoritative prerequisites.",
     parameters: WorkflowParams,
+    renderCall(params, theme) {
+      const harnesses = [...new Set((params.nodes ?? []).map((node) => node.harness ?? "pi"))];
+      return renderInlineAgentCard(theme, {
+        lifecycle: "running",
+        title: params.action === "create" ? (params.name?.trim() || "dependency workflow") : `${params.action} workflow`,
+        kind: "workflow node",
+        harness: harnesses.length > 0 ? harnesses.join("/") : "Pi",
+        identity: params.workflowId ?? `${params.nodes?.length ?? 0} nodes`,
+        activity: params.nodeId ? `target ${params.nodeId}` : "durable dependency and authority controls",
+      }, false);
+    },
+    renderResult(result, { expanded }, theme) {
+      const details = result.details as WorkflowToolDetails | undefined;
+      const failed = (result as { isError?: boolean }).isError === true;
+      const lifecycle: OrchestrationLifecycle = failed || details?.status === "failed"
+        ? "failed"
+        : details?.status === "paused" || details?.status === "awaiting_resume"
+          ? "paused"
+          : details?.status === "stopped"
+            ? "stopped"
+            : details?.status === "active" || details?.status === "pausing" || details?.status === "stopping"
+              ? "running"
+              : "done";
+      const output = result.content.find((item) => item.type === "text")?.text ?? "";
+      return renderInlineAgentCard(theme, {
+        lifecycle,
+        title: details?.workflowId ? `Workflow ${details.workflowId}` : "Dependency workflow",
+        kind: "workflow node",
+        harness: "Pi/Claude/Codex/Grok",
+        identity: details?.action,
+        activity: details?.status ?? (failed ? "request failed" : "request accepted"),
+        output,
+        metadata: ["dependency", "lineage", "pause/retry", "authority"],
+      }, expanded);
+    },
     async execute(_toolCallId, params) {
       if (!scheduler) {
         return {

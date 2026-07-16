@@ -21,7 +21,19 @@ import {
 import { authoritativeAttemptForRun, discoverExternalRuns, normalizedModel, rebuildWorkflowTelemetry, refreshAttemptFromDisk } from "./runtime.ts";
 
 type Listener = () => void;
-type Notice = (message: string, level: "info" | "warning" | "error", triggerTurn?: boolean) => void | Promise<void>;
+export interface WorkflowNotificationDetails {
+  workflowId: string;
+  name: string;
+  status: "succeeded" | "blocked" | "failed" | "paused" | "stopped";
+  completed: number;
+  total: number;
+  failedNodeIds: string[];
+  harnesses: WorkflowHarness[];
+  totalTokens: number;
+  costUsd: number;
+  statePath: string;
+}
+type Notice = (message: string, level: "info" | "warning" | "error", triggerTurn: boolean, details: WorkflowNotificationDetails) => void | Promise<void>;
 type RuntimeIdentity = { processId: number; isProcessAlive(processId: number): boolean };
 
 const DEFAULT_RUNTIME: RuntimeIdentity = {
@@ -650,8 +662,23 @@ export class WorkflowScheduler {
 
   private async deliverNotification(workflow: WorkflowRun, record: import("./model.ts").NotificationRecord): Promise<void> {
     record.attemptedAt = Date.now();
+    const failedNodeIds = Object.values(workflow.nodes)
+      .filter((node) => ["failed", "orphaned"].includes(node.status))
+      .map((node) => node.spec.id);
+    const details: WorkflowNotificationDetails = {
+      workflowId: workflow.id,
+      name: workflow.name,
+      status: record.category,
+      completed: Object.values(workflow.nodes).filter((node) => node.status === "succeeded").length,
+      total: Object.keys(workflow.nodes).length,
+      failedNodeIds,
+      harnesses: [...new Set(Object.values(workflow.nodes).map((node) => node.spec.harness ?? "pi"))],
+      totalTokens: workflow.telemetry.totalTokens,
+      costUsd: workflow.telemetry.costUsd,
+      statePath: this.store.statePath(workflow.id),
+    };
     try {
-      await this.notice(record.message, record.category === "succeeded" ? "info" : "warning", record.triggerTurn);
+      await this.notice(record.message, record.category === "succeeded" ? "info" : "warning", record.triggerTurn, details);
       record.deliveredAt = Date.now();
       record.error = undefined;
       workflow.telemetry.notificationCount += 1;

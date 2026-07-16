@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { WorkflowScheduler, type WorkflowRpc } from "./scheduler.ts";
+import { WorkflowScheduler, type WorkflowNotificationDetails, type WorkflowRpc } from "./scheduler.ts";
 import { WorkflowStore } from "./store.ts";
 import type { ControlReply, OperationReply, SpawnReply, WorkflowProvenance } from "./rpc-client.ts";
 
@@ -118,7 +118,7 @@ class FakeRpc implements WorkflowRpc {
   }
 }
 
-async function harness(prefix: string, concurrency = 2, notice: (message: string, level: "info" | "warning" | "error", triggerTurn?: boolean) => void | Promise<void> = () => {}) {
+async function harness(prefix: string, concurrency = 2, notice: (message: string, level: "info" | "warning" | "error", triggerTurn: boolean, details: WorkflowNotificationDetails) => void | Promise<void> = () => {}) {
   const root = await mkdtemp(join(tmpdir(), prefix));
   const project = join(root, "project");
   await mkdir(project);
@@ -340,9 +340,9 @@ test("workflow and node cwd validation rejects traversal and symlink escapes", a
 
 test("notification delivery failure leaves lifecycle unchanged and retries exactly once", async () => {
   let fail = true;
-  const deliveries: Array<{ message: string; triggerTurn?: boolean }> = [];
-  const h = await harness("pi-dag-notification-", 1, (message, _level, triggerTurn) => {
-    deliveries.push({ message, triggerTurn });
+  const deliveries: Array<{ message: string; triggerTurn: boolean; details: WorkflowNotificationDetails }> = [];
+  const h = await harness("pi-dag-notification-", 1, (message, _level, triggerTurn, details) => {
+    deliveries.push({ message, triggerTurn, details });
     if (fail) throw new Error("notice unavailable");
   });
   try {
@@ -363,5 +363,17 @@ test("notification delivery failure leaves lifecycle unchanged and retries exact
     assert.equal(current.telemetry.parentWakeCount, 1);
     assert.equal(deliveries.length, 2);
     assert.ok(Buffer.byteLength(deliveries[1]!.message, "utf8") < 1024);
+    assert.deepEqual(deliveries[1]!.details, {
+      workflowId: workflow.id,
+      name: "notification retry",
+      status: "succeeded",
+      completed: 1,
+      total: 1,
+      failedNodeIds: [],
+      harnesses: ["pi"],
+      totalTokens: 0,
+      costUsd: 0,
+      statePath: h.store.statePath(workflow.id),
+    });
   } finally { h.scheduler.dispose(); await rm(h.root, { recursive: true, force: true }); }
 });

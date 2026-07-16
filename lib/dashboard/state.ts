@@ -2,6 +2,7 @@ export const MODEL_INFO_CHANNEL = "dashboard:model-info";
 export const GIT_INFO_CHANNEL = "dashboard:git-info";
 export const REFRESH_CHANNEL = "dashboard:refresh";
 export const WORKFLOW_INFO_CHANNEL = "dashboard:workflow-info";
+export const DIRECT_AGENT_INFO_CHANNEL = "dashboard:direct-agent-info";
 
 export interface ModelInfoState {
   provider: string;
@@ -21,10 +22,17 @@ export interface GitInfoState {
 
 export interface WorkflowInfoState {
   active: number;
+  paused?: number;
   runningAgents: number;
+  attention?: number;
   name?: string;
   completed?: number;
   total?: number;
+}
+
+export interface DirectAgentInfoState {
+  runningAgents: number;
+  attention?: number;
 }
 
 export function emptyModelInfoState(): ModelInfoState {
@@ -66,8 +74,16 @@ export function isGitInfoState(value: unknown): value is GitInfoState {
 export function isWorkflowInfoState(value: unknown): value is WorkflowInfoState {
   return record(value)
     && typeof value.active === "number"
+    && (value.paused === undefined || typeof value.paused === "number")
     && typeof value.runningAgents === "number"
+    && (value.attention === undefined || typeof value.attention === "number")
     && (value.name === undefined || typeof value.name === "string")
     && (value.completed === undefined || typeof value.completed === "number")
     && (value.total === undefined || typeof value.total === "number");
+}
+
+export function isDirectAgentInfoState(value: unknown): value is DirectAgentInfoState {
+  return record(value)
+    && typeof value.runningAgents === "number"
+    && (value.attention === undefined || typeof value.attention === "number");
 }
