@@ -2,6 +2,7 @@
 
 ## 2026-07-16
 
+- Reworked `/fleet` into a full-screen responsive workspace: wide terminals keep the workflow-node list and selected-node details side by side, while narrow terminals use list-to-detail drill-down navigation consistent with `/ps`.
 - Converted the live Pi configuration into the versioned `portable-pi-setup` package with an explicit extension, prompt, and skill manifest; machine-relative settings; pinned package and CLI versions; a production shrinkwrap; and a restricted publish allowlist.
 - Added a cross-platform installer that backs up managed live resources, preserves credentials and mutable state, installs real skill files instead of symlinks, and provisions the canonical settings, keybindings, support templates, visual examples, and Reading Room.
 - Added a doctor command and distribution tests for resource parity, path portability, owner-name removal, private-state preservation, package placement, and settings pins.

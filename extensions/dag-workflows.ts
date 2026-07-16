@@ -259,7 +259,7 @@ export default function (pi: ExtensionAPI) {
         },
       ), {
         overlay: true,
-        overlayOptions: { width: "90%", minWidth: 48, maxHeight: "90%", anchor: "center", margin: 1 },
+        overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
       });
     },
   });

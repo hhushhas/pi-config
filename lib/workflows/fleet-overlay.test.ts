@@ -75,8 +75,12 @@ function harness(controllable = true) {
   let retries = 0;
   let pauses = 0;
   let stops = 0;
+  let closes = 0;
   const notices: string[] = [];
-  const tui = { requestRender: () => { renders += 1; } } as unknown as TUI;
+  const tui = {
+    requestRender: () => { renders += 1; },
+    terminal: { rows: 30 },
+  } as unknown as TUI;
   const theme = {
     fg: (_color: string, text: string) => text,
     bg: (_color: string, text: string) => text,
@@ -87,6 +91,7 @@ function harness(controllable = true) {
       "tui.select.cancel": "escape",
       "tui.select.up": "up",
       "tui.select.down": "down",
+      "tui.select.confirm": "enter",
     }[binding] === data),
   } as KeybindingsManager;
   const actions: FleetActions = {
@@ -104,16 +109,34 @@ function harness(controllable = true) {
     confirm: async () => true,
     notify: (message) => { notices.push(message); },
   };
-  const overlay = new FleetOverlay(tui, theme, keybindings, () => {}, actions);
-  return { overlay, listeners, notices, get renders() { return renders; }, get retries() { return retries; }, get pauses() { return pauses; }, get stops() { return stops; } };
+  const overlay = new FleetOverlay(tui, theme, keybindings, () => { closes += 1; }, actions);
+  return { overlay, listeners, notices, get renders() { return renders; }, get retries() { return retries; }, get pauses() { return pauses; }, get stops() { return stops; }, get closes() { return closes; } };
 }
 
-test("fleet rendering stays inside narrow and wide terminal widths", () => {
+test("fleet rendering fills the screen and stays inside narrow and wide terminal widths", () => {
   const { overlay } = harness();
   for (const width of [40, 60, 100, 160]) {
-    for (const line of overlay.render(width)) assert.ok(visibleWidth(line) <= width, `${visibleWidth(line)} > ${width}`);
+    const lines = overlay.render(width);
+    assert.equal(lines.length, 29);
+    for (const line of lines) assert.ok(visibleWidth(line) <= width, `${visibleWidth(line)} > ${width}`);
   }
   overlay.dispose();
+});
+
+test("narrow fleet view drills into details and escape returns before closing", () => {
+  const state = harness();
+  try {
+    state.overlay.render(60);
+    state.overlay.handleInput("enter");
+    assert.match(state.overlay.render(60).join("\n"), /node details/);
+
+    state.overlay.handleInput("escape");
+    assert.equal(state.closes, 0);
+    assert.match(state.overlay.render(60).join("\n"), /workflow nodes/);
+
+    state.overlay.handleInput("escape");
+    assert.equal(state.closes, 1);
+  } finally { state.overlay.dispose(); }
 });
 
 test("fleet disables pause and stop for a foreign-owned authoritative attempt", async () => {

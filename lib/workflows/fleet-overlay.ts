@@ -68,7 +68,8 @@ function padAnsi(text: string, width: number): string {
 
 export class FleetOverlay implements Component {
   private selected = 0;
-  private detailsOnly = false;
+  private narrowDetails = false;
+  private lastRenderWidth = 80;
   private disposed = false;
   private actionRunning = false;
   private showHistory = false;
@@ -94,21 +95,32 @@ export class FleetOverlay implements Component {
 
   handleInput(data: string): void {
     if (this.keybindings.matches(data, "tui.select.cancel")) {
-      this.done();
+      if (this.lastRenderWidth < 100 && this.narrowDetails) {
+        this.narrowDetails = false;
+        this.tui.requestRender();
+      } else {
+        this.done();
+      }
       return;
     }
-    if (this.keybindings.matches(data, "tui.select.up")) {
+    if (
+      this.lastRenderWidth < 100 &&
+      !this.narrowDetails &&
+      this.keybindings.matches(data, "tui.select.confirm")
+    ) {
+      if (this.entries()[this.selected]) {
+        this.narrowDetails = true;
+        this.tui.requestRender();
+      }
+      return;
+    }
+    if (!this.narrowDetails && this.keybindings.matches(data, "tui.select.up")) {
       this.selected = Math.max(0, this.selected - 1);
       this.tui.requestRender();
       return;
     }
-    if (this.keybindings.matches(data, "tui.select.down")) {
+    if (!this.narrowDetails && this.keybindings.matches(data, "tui.select.down")) {
       this.selected = Math.min(Math.max(0, this.entries().length - 1), this.selected + 1);
-      this.tui.requestRender();
-      return;
-    }
-    if (matchesKey(data, "tab")) {
-      this.detailsOnly = !this.detailsOnly;
       this.tui.requestRender();
       return;
     }
@@ -153,7 +165,10 @@ export class FleetOverlay implements Component {
   }
 
   render(width: number): string[] {
-    const innerWidth = Math.max(20, width - 2);
+    this.lastRenderWidth = width;
+    if (width >= 100) this.narrowDetails = false;
+
+    const innerWidth = Math.max(1, width - 2);
     const entries = this.entries();
     const selected = entries[this.selected];
     const all = this.actions.snapshot();
@@ -161,26 +176,37 @@ export class FleetOverlay implements Component {
     const attention = all.flatMap((workflow) => Object.values(workflow.nodes)).filter((node) => currentAttempt(node)?.telemetry?.activityState === "needs_attention").length;
     const recorded = all.flatMap((workflow) => Object.values(workflow.nodes)).reduce((sum, node) => sum + node.attempts.length, 0);
     const external = all.reduce((sum, workflow) => sum + (workflow.externalEvidence?.length ?? 0), 0);
-    const title = ` Fleet · ${live} live · ${attention} attention · ${recorded} recorded · ${external} external · ${all.length} workflows `;
-    const lines = [
-      this.border("╭") + this.theme.fg("accent", padAnsi(title, innerWidth)) + this.border("╮"),
-    ];
+    const rows = this.tui.terminal.rows || 30;
+    const bodyHeight = Math.max(6, rows - 5);
 
+    const headerLeft = this.theme.fg("accent", this.theme.bold("Fleet"));
+    const headerRight = this.theme.fg("muted", `${live} live · ${attention} attention · ${recorded} recorded · ${external} external · ${all.length} workflows`);
+    const headerGap = Math.max(1, width - visibleWidth(headerLeft) - visibleWidth(headerRight) - 4);
+    const lines = [truncateToWidth(`  ${headerLeft}${" ".repeat(headerGap)}${headerRight}  `, width)];
+    const panelTitle = width < 100 && this.narrowDetails
+      ? `node details · ${selected?.node.spec.label ?? selected?.node.spec.id ?? "none"}`
+      : `workflow nodes · ${entries.length} shown`;
+    lines.push(this.border("╭") + this.borderSegment(innerWidth, panelTitle) + this.border("╮"));
+
+    let body: string[];
     if (!selected) {
-      lines.push(this.row(this.theme.fg("muted", " No workflow runs yet."), innerWidth));
-    } else if (width >= 100 && !this.detailsOnly) {
-      lines.push(...this.renderWide(entries, selected, innerWidth));
-    } else if (this.detailsOnly) {
-      lines.push(...this.renderDetails(selected, innerWidth, 18).map((line) => this.row(line, innerWidth)));
+      body = [this.theme.fg("muted", " No workflow runs yet.")];
+    } else if (width >= 100) {
+      body = this.renderWide(entries, selected, innerWidth, bodyHeight);
+    } else if (this.narrowDetails) {
+      body = this.renderDetails(selected, innerWidth, bodyHeight);
     } else {
-      lines.push(...this.renderList(entries, innerWidth, 15).map((line) => this.row(line, innerWidth)));
-      lines.push(this.row(this.theme.fg("borderMuted", "─".repeat(innerWidth)), innerWidth));
-      lines.push(...this.renderDetails(selected, innerWidth, 7).map((line) => this.row(line, innerWidth)));
+      body = this.renderList(entries, innerWidth, bodyHeight);
     }
+    while (body.length < bodyHeight) body.push("");
+    lines.push(...body.slice(0, bodyHeight).map((line) => this.row(line, innerWidth)));
+    lines.push(this.border("╰") + this.border("─".repeat(innerWidth)) + this.border("╯"));
 
     const busy = this.actionRunning ? " · action running" : "";
-    lines.push(this.row(this.theme.fg("dim", ` ↑↓ select · tab pane · h history · u resume · p pause · r retry · x stop · t takeover · esc close${busy}`), innerWidth));
-    lines.push(this.border("╰") + this.border("─".repeat(innerWidth)) + this.border("╯"));
+    const navigation = width < 100
+      ? this.narrowDetails ? "esc back" : "↑↓ select · enter inspect · esc close"
+      : "↑↓ select · esc close";
+    lines.push(truncateToWidth(this.theme.fg("dim", `  ${navigation} · h history · u resume · p pause · r retry · x stop · t takeover${busy}`), width));
     return lines;
   }
 
@@ -199,23 +225,21 @@ export class FleetOverlay implements Component {
     })));
   }
 
-  private renderWide(entries: NodeRef[], selected: NodeRef, width: number): string[] {
+  private renderWide(entries: NodeRef[], selected: NodeRef, width: number, height: number): string[] {
     const leftWidth = Math.max(36, Math.floor(width * 0.48));
     const rightWidth = width - leftWidth - 1;
-    const left = this.renderList(entries, leftWidth, 20);
-    const right = this.renderDetails(selected, rightWidth, 20);
-    const height = Math.max(left.length, right.length);
-    return Array.from({ length: height }, (_, index) => this.row(
+    const left = this.renderList(entries, leftWidth, height);
+    const right = this.renderDetails(selected, rightWidth, height);
+    return Array.from({ length: height }, (_, index) =>
       `${padAnsi(left[index] ?? "", leftWidth)}${this.theme.fg("borderMuted", "│")}${padAnsi(right[index] ?? "", rightWidth)}`,
-      width,
-    ));
+    );
   }
 
   private renderList(entries: NodeRef[], width: number, limit: number): string[] {
-    const start = Math.max(0, Math.min(this.selected - Math.floor(limit / 2), entries.length - limit));
     let previousWorkflow = "";
+    let selectedLine = 0;
     const lines: string[] = [];
-    for (let index = start; index < Math.min(entries.length, start + limit); index++) {
+    for (let index = 0; index < entries.length; index++) {
       const entry = entries[index];
       if (entry.workflow.id !== previousWorkflow) {
         lines.push(this.theme.bold(` ${entry.workflow.name}  ${this.theme.fg("dim", entry.workflow.status)}`));
@@ -226,9 +250,11 @@ export class FleetOverlay implements Component {
       const label = entry.node.spec.label ?? entry.node.spec.id;
       const text = ` ${GLYPHS[status] ?? "?"} ${label}${dependency}`;
       const colored = this.statusColor(status, text);
+      if (index === this.selected) selectedLine = lines.length;
       lines.push(index === this.selected ? this.theme.bg("selectedBg", padAnsi(colored, width)) : colored);
     }
-    return lines;
+    const start = Math.max(0, Math.min(selectedLine - Math.floor(limit / 2), lines.length - limit));
+    return lines.slice(start, start + limit).map((line) => truncateToWidth(line, width, "…", true));
   }
 
   private renderDetails({ workflow, node }: NodeRef, width: number, limit: number): string[] {
@@ -290,6 +316,13 @@ export class FleetOverlay implements Component {
     if (status === "running" || status === "launching" || status === "pausing" || status === "stopping") return this.theme.fg("accent", text);
     if (status === "blocked" || status === "paused") return this.theme.fg("warning", text);
     return this.theme.fg("muted", text);
+  }
+
+  private borderSegment(width: number, title: string): string {
+    const label = title ? ` ${truncateToWidth(title, Math.max(0, width - 3))} ` : "";
+    return this.border("─") +
+      (label ? this.theme.fg("text", label) : "") +
+      this.border("─".repeat(Math.max(0, width - 1 - visibleWidth(label))));
   }
 
   private row(text: string, width: number): string {
