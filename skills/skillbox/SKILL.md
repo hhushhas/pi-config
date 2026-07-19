@@ -10,27 +10,28 @@ Use Skillbox to find task-specific skills on demand. Do not preload or guess ski
 ## Commands
 
 ```bash
-skillbox search "<task>"          # natural-language search
-skillbox list --category frontend # browse by category
-skillbox info <skill>             # source, resources, token estimate
-skillbox fetch <skill> --print    # read SKILL.md
-skillbox fetch <skill> --to-temp  # full folder when resources exist
-skillbox cleanup                  # remove temp fetches
+skillbox list                         # browse all trusted skills
+skillbox list --category frontend     # browse a trusted category
+skillbox search "<task>"               # natural-language trusted search
+skillbox info <skill>                  # source, resources, token estimate
+skillbox fetch <skill>                 # print SKILL.md and prepare support files
+skillbox search "<task>" --web         # search unverified skills.sh results
+skillbox cleanup                       # remove temp fetches
 ```
 
-If `info` or list output shows resources, prefer `--to-temp` and read only the referenced support files the fetched skill asks for.
+`fetch` prints `SKILL.md` directly. When a skill has support files, it also copies the full folder to Skillbox's temp directory and reports the file counts and exact path; read only the support files that `SKILL.md` asks for.
 
 ## Registries
 
-Resolution order is project, installed external, remote/default:
+Resolution order is project, global local, installed external, then configured remote:
 
 1. `.agents/skillbox.yaml`
-2. `~/.config/skillbox/installed.yaml`
-3. `~/.config/skillbox/config.yaml`
-4. `hhushhas/skillbox-registry`
+2. `~/.skillbox/skillbox.yaml`
+3. `~/.skillbox/installed.yaml`
+4. Remotes in `~/.skillbox/config.yaml`
 
-saved skills live in `~/code/skillbox-registry`.
+Shared registry skills live in `~/code/skillbox-registry`.
 
 ## External Skills
 
-Use `skillbox search "<query>" --web` only when skills.sh discovery is useful. External skills are unvetted; fetch by full id, skim before following, and promote anything durable into the shared registry.
+`--web` is explicit because skills.sh content is unvetted. Use it only when public discovery is useful, fetch a result by its full `owner/repo/skill` id, skim the returned instructions before following them, and promote anything durable into a trusted registry.
