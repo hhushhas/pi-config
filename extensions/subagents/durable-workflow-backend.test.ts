@@ -44,7 +44,10 @@ setTimeout(()=>{},30000);`);
 
 const spawnParams = (root: string) => ({ harness: "codex", agent: "worker", task: "do work", cwd: root, operationId: "op", workflowCapability: "secret", provenance: sourceProvenance, notificationMode: "event-only" });
 
-function kill(pid: number | undefined) { if (pid) { try { process.kill(pid, "SIGKILL"); } catch {} } }
+async function cleanup(root: string, pid: number | undefined) {
+  if (pid) { try { process.kill(pid, "SIGKILL"); } catch {} }
+  await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+}
 
 test("bridge binding is idempotent and lifecycle disposal removes its listener without touching runners", async () => {
   const h = await fixture("workflow-backend-lifecycle-");
@@ -58,7 +61,7 @@ test("bridge binding is idempotent and lifecycle disposal removes its listener w
     assert.doesNotThrow(() => process.kill(pid!, 0), "disposing the session bridge must leave the detached runner alive");
     h.bridge.start();
     assert.equal(h.bus.listenerCount("subagents:workflow-backend:v1:request"), 1);
-  } finally { h.bridge.dispose(); kill(pid); await rm(h.root, { recursive: true, force: true }); }
+  } finally { h.bridge.dispose(); await cleanup(h.root, pid); }
 });
 
 test("concurrent launch and control replay are durable, idempotent, and status routes end to end", async () => {
@@ -88,7 +91,7 @@ test("concurrent launch and control replay are durable, idempotent, and status r
     assert.equal(JSON.parse(await readFile(join(first.asyncDir, "controls", journal[0]!), "utf8")).controlRequestId, "control-1");
     await assert.rejects(request(h.bus, "different-control", "steer", { ...controlParams, message: "changed" }), /different parameters/);
     await assert.rejects(request(h.bus, "wrong-authority", "stop", { ...controlParams, workflowCapability: "wrong" }), /authority/);
-  } finally { h.bridge.dispose(); secondBridge.dispose(); kill(pid); await rm(h.root, { recursive: true, force: true }); }
+  } finally { h.bridge.dispose(); secondBridge.dispose(); await cleanup(h.root, pid); }
 });
 
 test("a paused source accepts one concurrent resume claim and rejects competing operations", async () => {
@@ -114,5 +117,5 @@ test("a paused source accepts one concurrent resume claim and rejects competing 
     const rejection = claims.find((claim): claim is PromiseRejectedResult => claim.status === "rejected");
     assert.match(String(rejection?.reason), /already claimed/);
     assert.equal((await readdir(join(source.asyncDir, "controls"))).length, 1);
-  } finally { h.bridge.dispose(); kill(pid); await rm(h.root, { recursive: true, force: true }); }
+  } finally { h.bridge.dispose(); await cleanup(h.root, pid); }
 });
