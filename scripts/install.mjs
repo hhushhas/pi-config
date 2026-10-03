@@ -70,7 +70,7 @@ try {
       stdio: "inherit",
       env: { ...process.env, CI: "1" },
     });
-    if (result.error) throw new Error(`Could not run pnpm: ${result.error.message}. Install pnpm 11.1.3 and retry.`);
+    if (result.error) throw new Error(`Could not run pnpm: ${result.error.message}. Install pnpm 12.8.1 and retry.`);
     if (result.status !== 0) throw new Error(`pnpm install failed with exit ${result.status ?? "unknown"}.`);
   }
 

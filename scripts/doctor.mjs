@@ -31,7 +31,7 @@ nodeMajor >= 22 ? pass(`Node ${process.version}`) : fail(`Node 22+ required; fou
 const piVersion = commandVersion("pi");
 piVersion === "0.80.6" ? pass("Pi 0.80.6") : fail(`Pi 0.80.6 required; found ${piVersion ?? "not on PATH"}`);
 const pnpmVersion = commandVersion("pnpm");
-pnpmVersion === "11.1.3" ? pass("pnpm 11.1.3") : warn(`pnpm 11.1.3 recommended for updates; found ${pnpmVersion ?? "not on PATH"}`);
+pnpmVersion === "12.8.1" ? pass("pnpm 12.8.1") : warn(`pnpm 12.8.1 recommended for updates; found ${pnpmVersion ?? "not on PATH"}`);
 
 const expected = [
   "AGENTS.md", "settings.json", "keybindings.json", join("auto-name", "settings.json"),

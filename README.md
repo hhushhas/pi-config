@@ -10,7 +10,7 @@ Prerequisites:
 
 - Node 22 or newer;
 - Pi `0.80.6`;
-- pnpm `11.1.3`;
+- pnpm `12.8.1`;
 - Git.
 
 From a checkout of this repository:
